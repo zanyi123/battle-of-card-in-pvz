@@ -1,0 +1,35 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 打包产物
+build/
+dist/
+*.spec
+*.exe
+*.zip
+
+# 临时/分析文件
+*_extracted/
+_analyze_*.py
+_disasm_*.py
+_extract_*.py
+*_analysis.txt
+*_disasm.txt
+*_strings.txt
+*.bak*
+.backup/
+
+# 首次运行标记
+.initialized
+
+# 编辑器/IDE
+.vscode/
+.cursor/
+.workbuddy/
+.pi/
+
+# 系统文件
+.DS_Store
+Thumbs.db

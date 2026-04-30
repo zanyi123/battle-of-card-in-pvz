@@ -1,0 +1,956 @@
+from __future__ import annotations
+
+from typing import Any
+
+from core.effects import consume_shield, sum_buff_value, _ensure_buffs_list
+from core.effect_executor import EffectExecutor
+
+
+class ResolutionEngine:
+    """伤害结算引擎 - 按阶段顺序执行效果和伤害计算。
+    
+    血量上限：10点
+    
+    结算顺序（优先级从低到高）：
+    阶段1: 基础效果1（护盾 & 生命恢复）
+    阶段2: 基础效果2（减伤 & 连携 & 破甲 & 精力增益）
+    阶段3: 阵营克制（决定反阵营机制）
+    阶段4: 基础效果3（增伤）
+    阶段5: 特殊技能1（卡牌交互）
+    阶段6: 特殊技能2（控制 & 防御，最高优先级）
+    """
+    MAX_HP = 10
+
+    # 阶段1效果ID（护盾 & 恢复）
+    _PHASE_1_EFFECTS = frozenset({
+        'SHIELD_1', 'SHIELD_2', 'SHIELD_6',
+        'HEAL_2', 'HEAL_3', 'HEAL_4', 'HEAL_TO_8', 'HEAL_BY_COST'
+    })
+    
+    # 阶段2效果ID（减伤 & 破甲 & 精力 & 连携）
+    _PHASE_2_EFFECTS = frozenset({
+        'MANA_1', 'MANA_3', 'MANA_4',
+        'DMG_REDUCE_2', 'DMG_REDUCE_PER_CARD',
+        'ARMOR_PEN', 'ARMOR_PIERCE',
+        'COMBO_HEAL_DMG', 'BOOST_ATK_HEAL'
+    })
+    
+    # 阶段3效果ID（阵营克制）
+    _PHASE_3_EFFECTS = frozenset({
+        'COUNTER_ATK_ZERO',
+        'COUNTER_DMG_X3', 'DMG_BUFF_3X_COUNTER',
+        'NO_COUNTER_DMG_X2', 'DMG_BUFF_2X'
+    })
+    
+    # 阶段4效果ID（增伤）
+    _PHASE_4_EFFECTS = frozenset({
+        'DMG_BUFF_3X_SUPPORT', 'SUPPORT_DMG_MULTIPLIER',
+        'DMG_BUFF_ADD_2', 'BOOST_ATK_HEAL'
+    })
+    
+    # 阶段5效果ID（卡牌交互）
+    _PHASE_5_EFFECTS = frozenset({
+        'DISCARD_FA', 'DISCARD',
+        'STEAL_CARD', 'STEAL_SH',
+        'CONVERT_COST_TO_HEAL', 'COST_TO_HEAL',
+        'CONVERT_ATK_TO_HEAL', 'ATK_TO_HEAL',
+        'COST_TO_HEAL_SELF'
+    })
+    
+    # 阶段6效果ID（控制 & 防御）
+    _PHASE_6_EFFECTS = frozenset({
+        'BLOCK_1', 'SHIELD_TURN', 'BLOCK_ONE_TURN',
+        'SILENCE_ATTACK', 'ATK_DISABLE',
+        'SILENCE_TURN', 'SILENCE',
+        'REFLECT_DMG', 'REFLECT_ATK',
+        'COUNTER'
+    })
+
+    def resolve_clash(self, p1_cards: list[Any], p2_cards: list[Any], state: dict[str, Any]) -> list[dict[str, Any]]:
+        """旧的结算方法（保持向后兼容）。"""
+        logs: list[dict[str, Any]] = []
+        state.setdefault(
+            "players",
+            {"P1": {"hp": self.MAX_HP}, "P2": {"hp": self.MAX_HP}},
+        )
+
+        p1_main, p1_supports = self._split_cards(p1_cards)
+        p2_main, p2_supports = self._split_cards(p2_cards)
+
+        # ── 辅助卡效果先于主卡伤害结算（设置 temp 标记）──────────
+        self._apply_supports("P1", p1_supports, state, logs)
+        self._apply_supports("P2", p2_supports, state, logs)
+
+        # ── 主卡克制效果（双方卡牌已确定，此时可正确判定阵营克制）──
+        self._apply_main_counter_effects(p1_main, p2_main, state, logs)
+
+        # ── 主卡伤害结算（读取 temp 标记修正伤害）────────────────
+        p1_damage, p2_damage = self._resolve_main_damage(p1_main, p2_main, state)
+
+        # ── block_turn：若被保护方有 block_turn Buff，则免疫本次伤害 ──
+        for (player, damage_val, damage_setter) in [
+            ("P1", p1_damage, lambda v: None),
+            ("P2", p2_damage, lambda v: None),
+        ]:
+            _ = damage_setter
+
+        # P1 受到 p1_damage（P2 打出伤害），P2 受到 p2_damage（P1 打出伤害）
+        p1_damage = self._apply_block_turn("P1", p1_damage, state, logs)
+        p2_damage = self._apply_block_turn("P2", p2_damage, state, logs)
+
+        # ── REFLECT_ATK：若被攻击方有 reflect_atk 标记，伤害反弹 ──
+        p1_damage, p2_damage = self._apply_reflect(p1_damage, p2_damage, state, logs)
+
+        self._apply_damage("P1", p1_damage, state, logs, "overflow")
+        self._apply_damage("P2", p2_damage, state, logs, "overflow")
+
+        # ── heal_over_time 触发（结算末尾）────────────────────────
+        for p in ("P1", "P2"):
+            self._trigger_heal_over_time(p, state, logs)
+
+        self._clear_temporary_state(state, logs)
+        return logs
+
+    def resolve_phase_based(
+        self,
+        state: dict[str, Any],
+        p1_cards: list[Any],
+        p2_cards: list[Any]
+    ) -> list[dict[str, Any]]:
+        """新的基于阶段的结算方法。
+        
+        按照严格的执行顺序重构伤害计算系统：
+        阶段1: 基础效果1（护盾 & 生命恢复）
+        阶段2: 基础效果2（减伤 & 连携 & 破甲 & 精力增益）
+        阶段3: 阵营克制（决定反阵营机制）
+        阶段4: 基础效果3（增伤）
+        阶段5: 特殊技能1（卡牌交互）
+        阶段6: 特殊技能2（控制 & 防御，最高优先级）
+        
+        Args:
+            state: 游戏状态字典
+            p1_cards: P1出牌列表
+            p2_cards: P2出牌列表
+            
+        Returns:
+            日志记录列表
+        """
+        logs: list[dict[str, Any]] = []
+        state.setdefault(
+            "players",
+            {"P1": {"hp": self.MAX_HP}, "P2": {"hp": self.MAX_HP}},
+        )
+        
+        # 添加结算日志标记
+        logs.append({
+            "player": "SYSTEM",
+            "action": "resolve_start",
+            "value": 1,
+            "reason": "phase_based_resolution"
+        })
+        
+        # 将出牌存入 state（用于后续计算）
+        state.setdefault("played_cards", {})
+        state["played_cards"]["P1"] = list(p1_cards)
+        state["played_cards"]["P2"] = list(p2_cards)
+        
+        # P1结算
+        self._apply_phase_1(state, "P1", p1_cards, logs)
+        self._apply_phase_2(state, "P1", p1_cards, logs)
+        self._apply_phase_3(state, "P1", "P2", p1_cards, logs)
+        self._apply_phase_4(state, "P1", p1_cards, logs)
+        self._apply_phase_5(state, "P1", "P2", p1_cards, logs)
+        self._apply_phase_6(state, "P1", "P2", p1_cards, logs)
+        
+        # P2结算
+        self._apply_phase_1(state, "P2", p2_cards, logs)
+        self._apply_phase_2(state, "P2", p2_cards, logs)
+        self._apply_phase_3(state, "P2", "P1", p2_cards, logs)
+        self._apply_phase_4(state, "P2", p2_cards, logs)
+        self._apply_phase_5(state, "P2", "P1", p2_cards, logs)
+        self._apply_phase_6(state, "P2", "P1", p2_cards, logs)
+        
+        # 最终伤害结算
+        p1_damage, p2_damage = self._finalize_damage(state, logs)
+        
+        # 应用伤害
+        self._apply_damage("P1", p1_damage, state, logs, "phase_based")
+        self._apply_damage("P2", p2_damage, state, logs, "phase_based")
+        
+        # 触发持续治疗
+        for p in ("P1", "P2"):
+            self._trigger_heal_over_time(p, state, logs)
+        
+        # 清理临时状态
+        self._clear_temporary_state(state, logs)
+        
+        logs.append({
+            "player": "SYSTEM",
+            "action": "resolve_end",
+            "value": 1,
+            "reason": "phase_based_resolution"
+        })
+        
+        return logs
+    
+    # ==================== 阶段函数 ====================
+    
+    def _apply_phase_1(
+        self,
+        state: dict[str, Any],
+        player_key: str,
+        cards: list[Any],
+        logs: list[dict[str, Any]]
+    ) -> None:
+        """阶段1: 基础效果1（护盾 & 生命恢复）。
+        
+        包含效果:
+        - SHIELD_1, SHIELD_2, SHIELD_6: 添加护盾
+        - HEAL_2, HEAL_3, HEAL_4: 恢复指定血量
+        - HEAL_TO_8: 血量恢复至8点
+        - HEAL_BY_COST: 费用转为回血
+        """
+        logs.append({
+            "player": player_key,
+            "action": "phase_1_start",
+            "value": 1,
+            "reason": "shield_and_heal"
+        })
+        
+        for card in cards:
+            effect_id = str(self._card_value(card, 'effect_id', ''))
+            if not effect_id:
+                continue
+                
+            # 检查是否属于阶段1效果
+            if effect_id in self._PHASE_1_EFFECTS:
+                effect_logs = EffectExecutor.execute_effect_by_phase(
+                    state, player_key, card, effect_id, 1, logs
+                )
+                logs.extend(effect_logs)
+        
+        # 处理辅助卡（type="辅"）的护盾/恢复效果
+        support_cards = [c for c in cards if self._card_value(c, 'type', '') == '辅']
+        self._apply_supports(player_key, support_cards, state, logs, phase=1)
+    
+    def _apply_phase_2(
+        self,
+        state: dict[str, Any],
+        player_key: str,
+        cards: list[Any],
+        logs: list[dict[str, Any]]
+    ) -> None:
+        """阶段2: 基础效果2（减伤 & 连携 & 破甲 & 精力增益）。
+        
+        包含效果:
+        - MANA_1, MANA_3, MANA_4: 增加精力上限
+        - DMG_REDUCE_2, DMG_REDUCE_PER_CARD: 减少受到的伤害
+        - ARMOR_PEN/ARMOR_PIERCE: 破甲，无视护盾
+        - COMBO_HEAL_DMG/BOOST_ATK_HEAL: 连携增伤+回血
+        """
+        logs.append({
+            "player": player_key,
+            "action": "phase_2_start",
+            "value": 1,
+            "reason": "reduce_armor_mana_combo"
+        })
+        
+        for card in cards:
+            effect_id = str(self._card_value(card, 'effect_id', ''))
+            if not effect_id:
+                continue
+                
+            if effect_id in self._PHASE_2_EFFECTS:
+                effect_logs = EffectExecutor.execute_effect_by_phase(
+                    state, player_key, card, effect_id, 2, logs
+                )
+                logs.extend(effect_logs)
+    
+    def _apply_phase_3(
+        self,
+        state: dict[str, Any],
+        player_key: str,
+        opponent_key: str,
+        cards: list[Any],
+        logs: list[dict[str, Any]]
+    ) -> None:
+        """阶段3: 阵营克制（决定反阵营机制）。
+        
+        包含效果:
+        - COUNTER_ATK_ZERO: 对克制阵营攻击清0
+        - COUNTER_DMG_X3/DMG_BUFF_3X_COUNTER: 对克制阵营伤害×3
+        - NO_COUNTER_DMG_X2/DMG_BUFF_2X: 若无法被克制，伤害×2
+        """
+        logs.append({
+            "player": player_key,
+            "action": "phase_3_start",
+            "value": 1,
+            "reason": "faction_counter"
+        })
+        
+        for card in cards:
+            effect_id = str(self._card_value(card, 'effect_id', ''))
+            if not effect_id:
+                continue
+                
+            if effect_id in self._PHASE_3_EFFECTS:
+                # 克制效果需要知道对手阵营，传入对手key
+                effect_logs = EffectExecutor.execute_counter_effect(
+                    state, player_key, opponent_key, card, effect_id, logs
+                )
+                logs.extend(effect_logs)
+    
+    def _apply_phase_4(
+        self,
+        state: dict[str, Any],
+        player_key: str,
+        cards: list[Any],
+        logs: list[dict[str, Any]]
+    ) -> None:
+        """阶段4: 基础效果3（增伤）。
+        
+        包含效果:
+        - DMG_BUFF_3X_SUPPORT/SUPPORT_DMG_MULTIPLIER: 有辅助时伤害×3
+        - DMG_BUFF_ADD_2: 增伤+2
+        """
+        logs.append({
+            "player": player_key,
+            "action": "phase_4_start",
+            "value": 1,
+            "reason": "damage_boost"
+        })
+        
+        for card in cards:
+            effect_id = str(self._card_value(card, 'effect_id', ''))
+            if not effect_id:
+                continue
+                
+            if effect_id in self._PHASE_4_EFFECTS:
+                effect_logs = EffectExecutor.execute_effect_by_phase(
+                    state, player_key, card, effect_id, 4, logs
+                )
+                logs.extend(effect_logs)
+    
+    def _apply_phase_5(
+        self,
+        state: dict[str, Any],
+        player_key: str,
+        opponent_key: str,
+        cards: list[Any],
+        logs: list[dict[str, Any]]
+    ) -> None:
+        """阶段5: 特殊技能1（卡牌交互）。
+        
+        包含效果:
+        - DISCARD_FA/DISCARD: 弃对手卡牌
+        - STEAL_CARD/STEAL_SH: 偷对手卡牌
+        - CONVERT_COST_TO_HEAL/COST_TO_HEAL: 费用转回血
+        - CONVERT_ATK_TO_HEAL/ATK_TO_HEAL: 对手攻击转回血
+        - COST_TO_HEAL_SELF: 自身费用转回血
+        """
+        logs.append({
+            "player": player_key,
+            "action": "phase_5_start",
+            "value": 1,
+            "reason": "card_interaction"
+        })
+        
+        for card in cards:
+            effect_id = str(self._card_value(card, 'effect_id', ''))
+            if not effect_id:
+                continue
+                
+            if effect_id in self._PHASE_5_EFFECTS:
+                # 卡牌交互效果需要对手信息
+                effect_logs = EffectExecutor.execute_interaction_effect(
+                    state, player_key, opponent_key, card, effect_id, logs
+                )
+                logs.extend(effect_logs)
+    
+    def _apply_phase_6(
+        self,
+        state: dict[str, Any],
+        player_key: str,
+        opponent_key: str,
+        cards: list[Any],
+        logs: list[dict[str, Any]]
+    ) -> None:
+        """阶段6: 特殊技能2（控制 & 防御，最高优先级）。
+        
+        包含效果:
+        - BLOCK_1/SHIELD_TURN/BLOCK_ONE_TURN: 抵挡一回合攻击
+        - SILENCE_ATTACK/ATK_DISABLE: 沉默攻击
+        - SILENCE_TURN/SILENCE: 沉默回合（无法出牌）
+        - REFLECT_DMG/REFLECT_ATK: 反弹伤害
+        - COUNTER: 克制标签
+        """
+        logs.append({
+            "player": player_key,
+            "action": "phase_6_start",
+            "value": 1,
+            "reason": "control_and_defense"
+        })
+        
+        for card in cards:
+            effect_id = str(self._card_value(card, 'effect_id', ''))
+            if not effect_id:
+                continue
+                
+            if effect_id in self._PHASE_6_EFFECTS:
+                # 控制和防御效果需要对手信息
+                effect_logs = EffectExecutor.execute_control_effect(
+                    state, player_key, opponent_key, card, effect_id, logs
+                )
+                logs.extend(effect_logs)
+    
+    def _finalize_damage(
+        self,
+        state: dict[str, Any],
+        logs: list[dict[str, Any]]
+    ) -> tuple[int, int]:
+        """最终伤害结算。
+        
+        根据temp标记计算双方对对手造成的最终伤害。
+        
+        Returns:
+            (p1_damage, p2_damage): P1受到的伤害, P2受到的伤害
+        """
+        p1_main, _ = self._split_cards(state.get("played_cards", {}).get("P1", []))
+        p2_main, _ = self._split_cards(state.get("played_cards", {}).get("P2", []))
+        
+        return self._resolve_main_damage(p1_main, p2_main, state)
+
+    def apply_remedy(self, card: Any, state: dict[str, Any]) -> list[dict[str, Any]]:
+        logs: list[dict[str, Any]] = []
+        target_player = self._card_value(card, "owner", "P1")
+        remedy_state = state.get("remedy", {}).get(target_player, {})
+        if not remedy_state:
+            return logs
+
+        before_hp = int(remedy_state.get("before_hp", 0))
+        damage_taken = int(remedy_state.get("damage_taken", 0))
+        remedy_value = int(self._card_value(card, "atk", 0))
+        final_hp = min(self.MAX_HP, before_hp - damage_taken + remedy_value)
+        self._set_hp(state, target_player, final_hp)
+
+        logs.append(
+            {
+                "player": target_player,
+                "action": "apply_remedy",
+                "value": remedy_value,
+                "reason": "remedy_formula",
+            }
+        )
+        logs.append(
+            {
+                "player": target_player,
+                "action": "set_hp",
+                "value": final_hp,
+                "reason": "remedy_result",
+            }
+        )
+
+        if final_hp <= 0:
+            state["phase"] = "GAME_OVER"
+            state["winner"] = "P2" if target_player == "P1" else "P1"
+            logs.append(
+                {
+                    "player": target_player,
+                    "action": "defeat",
+                    "value": final_hp,
+                    "reason": "remedy_failed",
+                }
+            )
+        else:
+            state["phase"] = "ROUND_END"
+
+        return logs
+
+    def _split_cards(self, cards: list[Any]) -> tuple[Any | None, list[Any]]:
+        main_cards = [c for c in cards if self._card_value(c, "type", "") == "主"]
+        support_cards = [c for c in cards if self._card_value(c, "type", "") == "辅"]
+        main_card = main_cards[0] if main_cards else None
+        return main_card, support_cards
+
+    # 克制类效果 ID：需要在双方卡牌确定后才能正确判定的效果
+    _COUNTER_EFFECT_IDS: frozenset[str] = frozenset({
+        "COUNTER_ATK_ZERO",      # 飞镖洋蓟：对克制自己阵营的对手攻击清0
+        "COUNTER_DMG_X3",        # 西瓜投手：对克制阵营伤害×3
+        "NO_COUNTER_DMG_X2",     # 毁灭菇：若无法被克制，伤害×2
+    })
+    # 莲小蓬等辅助增伤效果（空 effect_id 兜底卡牌 ID）
+    _SUPPORT_BUFF_CARD_IDS: frozenset[int] = frozenset({30})  # 莲小蓬
+
+    def _apply_main_counter_effects(
+        self,
+        p1_main: Any | None,
+        p2_main: Any | None,
+        state: dict[str, Any],
+        logs: list[dict[str, Any]],
+    ) -> None:
+        """在 RESOLVE 阶段执行主卡的克制类效果。
+
+        设计原因：克制效果需要知道对手阵营才能判定，
+        而 commit_pending_play() 时对手还没出牌，无法判定。
+        因此克制效果统一延后到 resolve_clash() 中执行。
+        """
+        from core.effect_executor import EffectExecutor
+
+        for player_key, my_main, opp_main in [
+            ("P1", p1_main, p2_main),
+            ("P2", p2_main, p1_main),
+        ]:
+            if my_main is None:
+                continue
+
+            effect_id = self._card_value(my_main, "effect_id", "")
+            card_id = int(self._card_value(my_main, "id", -1))
+
+            # 1. 有 effect_id 的克制类技能
+            if effect_id and effect_id in self._COUNTER_EFFECT_IDS:
+                effect_logs: list[dict[str, Any]] = []
+                dispatched = EffectExecutor.execute(state, player_key, my_main, effect_logs)
+                logs.extend(effect_logs)
+                if dispatched:
+                    continue
+
+            # 2. 莲小蓬等辅助增伤（空 effect_id 兜底）
+            if card_id in self._SUPPORT_BUFF_CARD_IDS:
+                effect_logs: list[dict[str, Any]] = []
+                dispatched = EffectExecutor.execute(state, player_key, my_main, effect_logs)
+                logs.extend(effect_logs)
+
+    def _resolve_main_damage(
+        self,
+        p1_main: Any | None,
+        p2_main: Any | None,
+        state: dict[str, Any],
+    ) -> tuple[int, int]:
+        """计算双方主卡对对手造成的伤害（全额制）。
+
+        全额制：每张主卡对对手造成 base_atk 伤害（经 temp 标记修正后），
+        不再比较双方攻击力差值。克制关系仅作为特殊技能的判定条件。
+
+        temp 键说明：
+          {player}_atk_disabled      → 该方 atk 被清 0
+          {player}_main_atk_zero     → 该方 main 卡 atk 被清 0（COUNTER_ATK_ZERO）
+          {player}_atk_boost         → 该方攻击增量（整数）
+          {player}_dmg_multiplier    → 该方伤害倍数（浮点，如 3.0）
+          {player}_armor_pierce      → 该方攻击无视对手护盾（在 _apply_damage 中处理）
+
+        返回 (p1_damage_to_take, p2_damage_to_take)：
+          p1_damage_to_take = P2 打给 P1 的伤害
+          p2_damage_to_take = P1 打给 P2 的伤害
+        """
+        # ── 双方都没出主卡 → 无伤害 ──
+        if p1_main is None and p2_main is None:
+            return 0, 0
+
+        temp = state.get("temp", {})
+
+        # ── 计算 P1 对 P2 造成的伤害 ──
+        p2_damage = 0
+        if p1_main is not None:
+            p1_atk = int(self._card_value(p1_main, "atk", 0))
+            if not (temp.get("P1_atk_disabled") or temp.get("P1_main_atk_zero")):
+                p1_atk += int(temp.get("P1_atk_boost", 0))
+            p1_atk = max(0, p1_atk)
+            mult = float(temp.get("P1_dmg_multiplier", 1.0))
+            p2_damage = max(0, int(p1_atk * mult))
+            # 平坦减伤
+            flat_reduce = int(temp.get("P2_flat_dmg_reduce", 0))
+            p1_card_count = max(1, len(state.get("played_cards", {}).get("P1", [])))
+            p2_damage = max(0, p2_damage - flat_reduce * p1_card_count)
+
+        # ── 计算 P2 对 P1 造成的伤害 ──
+        p1_damage = 0
+        if p2_main is not None:
+            p2_atk = int(self._card_value(p2_main, "atk", 0))
+            if not (temp.get("P2_atk_disabled") or temp.get("P2_main_atk_zero")):
+                p2_atk += int(temp.get("P2_atk_boost", 0))
+            p2_atk = max(0, p2_atk)
+            mult = float(temp.get("P2_dmg_multiplier", 1.0))
+            p1_damage = max(0, int(p2_atk * mult))
+            # 平坦减伤
+            flat_reduce = int(temp.get("P1_flat_dmg_reduce", 0))
+            p2_card_count = max(1, len(state.get("played_cards", {}).get("P2", [])))
+            p1_damage = max(0, p1_damage - flat_reduce * p2_card_count)
+
+        return p1_damage, p2_damage
+
+    def _apply_block_turn(
+        self,
+        player: str,
+        damage: int,
+        state: dict[str, Any],
+        logs: list[dict[str, Any]],
+    ) -> int:
+        """检查 player 是否持有 block_turn Buff，若有则免疫本次伤害并消耗该 Buff。"""
+        if damage <= 0:
+            return damage
+        player_state = state.get("players", {}).get(player, {})
+        buffs = _ensure_buffs_list(player_state)
+        block_buffs = [b for b in buffs if b.get("type") == "block_turn"]
+        if not block_buffs:
+            return damage
+        # 消耗一层 block_turn
+        player_state["buffs"] = [b for b in buffs if b.get("type") != "block_turn"]
+        logs.append({
+            "player": player,
+            "action": "block_turn_triggered",
+            "value": damage,
+            "reason": "block_turn_shield",
+        })
+        return 0  # 伤害被完全免疫
+
+    def _apply_reflect(
+        self,
+        p1_damage: int,
+        p2_damage: int,
+        state: dict[str, Any],
+        logs: list[dict[str, Any]],
+    ) -> tuple[int, int]:
+        """处理 REFLECT_ATK 反弹：若被攻击方有 reflect_atk 标记，伤害反弹给对方自己。"""
+        temp = state.get("temp", {})
+
+        # P1 有 reflect_atk → P1 即将受到的 p1_damage 反弹给 P2
+        if temp.get("P1_reflect_atk") and p1_damage > 0:
+            logs.append({
+                "player": "P1",
+                "action": "reflect_triggered",
+                "value": p1_damage,
+                "reason": "reflect_atk",
+            })
+            # 反弹：P2 额外受到 p1_damage 的伤害，P1 免疫
+            p2_damage += p1_damage
+            p1_damage = 0
+
+        # P2 有 reflect_atk → P2 即将受到的 p2_damage 反弹给 P1
+        if temp.get("P2_reflect_atk") and p2_damage > 0:
+            logs.append({
+                "player": "P2",
+                "action": "reflect_triggered",
+                "value": p2_damage,
+                "reason": "reflect_atk",
+            })
+            p1_damage += p2_damage
+            p2_damage = 0
+
+        return p1_damage, p2_damage
+
+    def _apply_supports(
+        self,
+        player: str,
+        support_cards: list[Any],
+        state: dict[str, Any],
+        logs: list[dict[str, Any]],
+        phase: int = 0
+    ) -> None:
+        """辅助卡效果触发：在 RESOLVE 阶段、主卡伤害计算前执行辅助卡效果。
+
+        设计说明：
+          - 辅助卡效果在此方法中触发（RESOLVE 阶段，时序正确）
+          - 主卡（type="主"）的即时效果由 commit_pending_play() 在确认出牌时触发
+          - 二者无重叠：_split_cards() 保证此方法只收到 type="辅" 的卡
+          - 如果效果已在 commit_pending_play 中触发（主卡）则此处不会再收到
+          
+        Args:
+            player: 玩家标识
+            support_cards: 辅助卡列表
+            state: 游戏状态
+            logs: 日志记录
+            phase: 当前阶段（0=旧模式，1-6=新阶段模式）
+        """
+        # ========== 新技能系统（三级架构）==========
+        # ========== 旧系统（保留备份，仅在新系统未处理时兜底）==========
+        from core.effects import dispatch_effect, _ensure_buffs_list as _ens
+
+        player_state = state.setdefault("players", {}).setdefault(player, {})
+        _ens(player_state)
+
+        for card in support_cards:
+            effect_id = self._card_value(card, "effect_id", "")
+            effect_logs: list[dict[str, Any]] = []
+
+            # 🔥 优先用三级新系统执行（内部兜底处理空 effect_id 的向日葵系列）
+            if phase > 0:
+                # 新阶段模式：根据阶段筛选效果
+                dispatched = self._execute_support_by_phase(state, player, card, effect_id, phase, effect_logs)
+            else:
+                # 旧模式：执行所有效果
+                dispatched = EffectExecutor.execute(state, player, card, effect_logs)
+                
+            logs.extend(effect_logs)
+
+            if not dispatched and effect_id:
+                # 旧系统兜底（处理 HEAL/SHIELD/MANA_UP/DMG_REDUCE 等旧效果）
+                old_logs: list[dict[str, Any]] = []
+                dispatched_old = dispatch_effect(str(effect_id), state, player, card, old_logs)
+                logs.extend(old_logs)
+                if not dispatched_old:
+                    logs.append({
+                        "player": player,
+                        "action": "support_effect_pending",
+                        "value": 0,
+                        "reason": str(effect_id),
+                    })
+    
+    def _execute_support_by_phase(
+        self,
+        state: dict[str, Any],
+        player_key: str,
+        card: Any,
+        effect_id: str,
+        phase: int,
+        logs: list[dict[str, Any]]
+    ) -> bool:
+        """根据阶段执行辅助卡效果。
+        
+        Args:
+            state: 游戏状态
+            player_key: 玩家标识
+            card: 卡牌对象
+            effect_id: 效果ID
+            phase: 当前阶段（1-6）
+            logs: 日志记录
+            
+        Returns:
+            是否执行了效果
+        """
+        if not effect_id:
+            return False
+            
+        # 根据阶段判断是否应该执行该效果
+        phase_effects_map = {
+            1: self._PHASE_1_EFFECTS,
+            2: self._PHASE_2_EFFECTS,
+            3: self._PHASE_3_EFFECTS,
+            4: self._PHASE_4_EFFECTS,
+            5: self._PHASE_5_EFFECTS,
+            6: self._PHASE_6_EFFECTS,
+        }
+        
+        allowed_effects = phase_effects_map.get(phase, frozenset())
+        
+        if effect_id not in allowed_effects:
+            return False
+            
+        # 执行效果
+        return EffectExecutor.execute(state, player_key, card, logs)
+
+    def _apply_damage(
+        self,
+        player: str,
+        damage: int,
+        state: dict[str, Any],
+        logs: list[dict[str, Any]],
+        reason: str,
+    ) -> None:
+        if damage <= 0:
+            return
+
+        try:
+            player_state = state.setdefault("players", {}).setdefault(player, {})
+            # 确保 buffs 为列表格式
+            _ensure_buffs_list(player_state)
+            temp = state.get("temp", {})
+
+            # ── 减伤乘算（dmg_reduce Buff，value 表示减伤百分比）────
+            dmg_reduce_pct = sum_buff_value(player_state, "dmg_reduce")
+            if dmg_reduce_pct > 0:
+                reduce_factor = max(0.0, 1.0 - dmg_reduce_pct / 100.0)
+                reduced_damage = int(damage * reduce_factor)
+                if reduced_damage < damage:
+                    logs.append({
+                        "player": player,
+                        "action": "dmg_reduce",
+                        "value": damage - reduced_damage,
+                        "reason": f"dmg_reduce_{dmg_reduce_pct}pct",
+                    })
+                damage = reduced_damage
+
+            # ── 护盾吸收（consume_shield 就地修改 buffs 列表）────────
+            # ARMOR_PIERCE：攻击方有破甲标记时，被攻击方护盾无效
+            opponent_key = "P2" if player == "P1" else "P1"
+            armor_pierced = temp.get(f"{opponent_key}_armor_pierce", False)
+
+            if damage > 0 and not armor_pierced:
+                absorbed, remaining_damage = consume_shield(player_state, damage)
+                if absorbed > 0:
+                    logs.append({
+                        "player": player,
+                        "action": "shield_absorb",
+                        "value": absorbed,
+                        "reason": reason,
+                    })
+                damage = remaining_damage
+            elif damage > 0 and armor_pierced:
+                logs.append({
+                    "player": player,
+                    "action": "armor_pierce_bypass",
+                    "value": damage,
+                    "reason": "armor_pierce_active",
+                })
+
+            # ── 扣血 ─────────────────────────────────────────────────
+            if damage <= 0:
+                return
+
+            hp_before = self._get_hp(state, player)
+            hp_after = hp_before - damage
+            self._set_hp(state, player, hp_after)
+            logs.append(
+                {"player": player, "action": "take_damage", "value": damage, "reason": reason}
+            )
+            logs.append({"player": player, "action": "set_hp", "value": hp_after, "reason": "after_damage"})
+            if hp_after <= 0:
+                state["phase"] = "REMEDY"
+                remedy = state.setdefault("remedy", {})
+                remedy[player] = {"before_hp": hp_before, "damage_taken": damage}
+                logs.append({
+                    "player": player,
+                    "action": "enter_remedy",
+                    "value": 1,
+                    "reason": "hp_le_zero",
+                })
+        except (TypeError, ValueError, KeyError, AttributeError) as exc:
+            logs.append({
+                "player": player,
+                "action": "damage_error",
+                "value": 0,
+                "reason": f"type_error:{exc}",
+            })
+
+    def _apply_heal(
+        self,
+        player: str,
+        value: int,
+        state: dict[str, Any],
+        logs: list[dict[str, Any]],
+        reason: str,
+    ) -> None:
+        if value <= 0:
+            return
+        hp_before = self._get_hp(state, player)
+        hp_after = min(self.MAX_HP, hp_before + value)
+        self._set_hp(state, player, hp_after)
+        logs.append({"player": player, "action": "heal", "value": value, "reason": reason})
+        logs.append({"player": player, "action": "set_hp", "value": hp_after, "reason": "after_heal"})
+
+    def _trigger_heal_over_time(
+        self,
+        player: str,
+        state: dict[str, Any],
+        logs: list[dict[str, Any]],
+    ) -> None:
+        """触发持续治疗 buff：回复 HP 后移除该 Buff。兼容列表/字典两种格式。"""
+        from core.effects import _ensure_buffs_list
+        player_state = state.setdefault("players", {}).setdefault(player, {})
+        buffs = _ensure_buffs_list(player_state)
+
+        # 聚合所有 heal_over_time buff 的 value
+        hot_buffs = [b for b in buffs if b.get("type") == "heal_over_time"]
+        heal_value = sum(int(b.get("value", 0)) for b in hot_buffs)
+        if heal_value <= 0:
+            return
+
+        # 消费：移除本回合触发的 HoT
+        player_state["buffs"] = [b for b in buffs if b.get("type") != "heal_over_time"]
+        self._apply_heal(player, heal_value, state, logs, "heal_over_time")
+
+    def _clear_temporary_state(self, state: dict[str, Any], logs: list[dict[str, Any]]) -> None:
+        state["temp"] = {}
+        logs.append(
+            {
+                "player": "SYSTEM",
+                "action": "clear_temporary",
+                "value": 1,
+                "reason": "round_end",
+            }
+        )
+
+    def _card_value(self, card: Any, key: str, default: Any) -> Any:
+        if isinstance(card, dict):
+            return card.get(key, default)
+        return getattr(card, key, default)
+
+    def _get_hp(self, state: dict[str, Any], player: str) -> int:
+        players = state.setdefault("players", {})
+        player_state = players.setdefault(player, {"hp": self.MAX_HP})
+        return int(player_state.get("hp", self.MAX_HP))
+
+    def _set_hp(self, state: dict[str, Any], player: str, hp: int) -> None:
+        players = state.setdefault("players", {})
+        player_state = players.setdefault(player, {"hp": self.MAX_HP})
+        player_state["hp"] = int(hp)
+    
+    def log_phase_summary(self, logs: list[dict[str, Any]]) -> str:
+        """生成阶段结算摘要日志（用于调试）。
+        
+        Args:
+            logs: 结算日志列表
+            
+        Returns:
+            格式化的日志字符串
+        """
+        phase_names = {
+            1: "基础效果1（护盾 & 恢复）",
+            2: "基础效果2（减伤 & 破甲 & 精力 & 连携）",
+            3: "阵营克制",
+            4: "基础效果3（增伤）",
+            5: "特殊技能1（卡牌交互）",
+            6: "特殊技能2（控制 & 防御）"
+        }
+        
+        lines = ["=== 回合结算开始 ==="]
+        
+        # 按玩家和阶段分组
+        for player in ["P1", "P2"]:
+            for phase in range(1, 7):
+                phase_logs = [
+                    log for log in logs
+                    if log.get("player") == player and log.get("action") == f"phase_{phase}_start"
+                ]
+                if phase_logs:
+                    lines.append(f"[阶段{phase}] {phase_names.get(phase, '未知')} - {player}")
+                    
+                    # 显示该阶段的具体效果
+                    action_logs = [
+                        log for log in logs
+                        if log.get("player") == player and log.get("reason") not in ["phase_based_resolution", "overflow"]
+                    ]
+                    for log in action_logs:
+                        action = log.get("action", "")
+                        value = log.get("value", 0)
+                        reason = log.get("reason", "")
+                        if action in ["gain_shield", "shield_absorb"]:
+                            lines.append(f"  ✅ {player} 护盾 {value}点 ({reason})")
+                        elif action in ["heal"]:
+                            lines.append(f"  ✅ {player} 恢复 {value}点生命")
+                        elif action in ["take_damage"]:
+                            lines.append(f"  💥 {player} 受到 {value}点伤害")
+                        elif action in ["atk_boost"]:
+                            lines.append(f"  ⚔️ {player} 增伤 +{value}")
+                        elif action in ["dmg_multiplier"]:
+                            lines.append(f"  ⚔️ {player} 伤害倍率 ×{value}")
+                        elif action in ["steal_card"]:
+                            lines.append(f"  🃏 {player} 偷取了卡牌")
+                        elif action in ["reflect_triggered"]:
+                            lines.append(f"  ↩️ {player} 反弹伤害 {value}")
+                        elif action in ["silenced"]:
+                            lines.append(f"  🔇 {player} 被沉默")
+        
+        lines.append("=== 最终伤害结算 ===")
+        
+        # 显示HP变化
+        from core.effects import _ensure_buffs_list
+        for player in ["P1", "P2"]:
+            player_state = logs[-1].get("state", {}) if logs else {}
+            if player in player_state or logs:
+                # 从日志中获取HP信息
+                hp_logs = [log for log in logs if log.get("player") == player and log.get("action") == "set_hp"]
+                if hp_logs:
+                    last_hp = hp_logs[-1].get("value", 10)
+                    lines.append(f"  {player} HP: {last_hp}/10")
+        
+        return "\n".join(lines)
