@@ -23,6 +23,7 @@ from network.lan_discovery import LanDiscovery
 from network.protocol import LAN_PORT, make_message, parse_message
 from network.game_host import GameHost
 from network.game_client import GameClient
+from main import log_event
 
 
 # ── 颜色 ─────────────────────────────────────────────────────
