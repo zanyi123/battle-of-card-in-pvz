@@ -914,9 +914,17 @@ def main() -> None:
 
         elif current_scene == Scene.MENU:
             # ── 确保玩家已注册 ─────────────────────────────
-            if not ensure_registered(screen, SCREEN_SIZE):
+            # 多开支持：可以强制重新注册
+            registered, action = ensure_registered(screen, SCREEN_SIZE, force_reregister=False)
+            if not registered:
                 pygame.quit()
                 return
+
+            # action: "use" = 使用现有账号，"new" = 重新注册
+            if action == "new":
+                log_event("[Player] 已切换到新账号")
+            else:
+                log_event(f"[Player] 使用现有账号: {get_player_name()}")
 
             # ── 主菜单 ───────────────────────────────────────
             action, selected_world = run_main_menu(screen, music_manager, settings)
