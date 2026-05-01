@@ -110,6 +110,7 @@ class LobbyScreen:
         # 邀请回调结果
         self._invite_result: str = ""  # "" / "host" / "client"
         self._peer_ip: str = ""
+        self._tcp_listening = False  # 标记TCP监听是否启动
 
     def get_font(self, size: int, bold: bool = False) -> pygame.font.Font:
         if not pygame.font.get_init():
@@ -127,25 +128,40 @@ class LobbyScreen:
         return font
 
     def start(self) -> None:
-        """启动局域网发现 + TCP 监听。"""
+        """启动局域网发现 + TCP 监听（仅被邀请时）。"""
         self._discovery.start()
-        self._start_tcp_listen()
+        # TCP监听延后启动，避免与另一个进程冲突
+        # self._start_tcp_listen()
+
+    def start_listening(self) -> None:
+        """启动 TCP 监听（被邀请时）。"""
+        if not self._tcp_listening:
+            self._start_tcp_listen()
+            self._tcp_listening = True
 
     def stop(self) -> None:
         """停止所有网络服务。"""
         self._discovery.stop()
-        self._stop_tcp_listen()
+        if self._tcp_listening:
+            self._stop_tcp_listen()
+            self._tcp_listening = False
 
     def _start_tcp_listen(self) -> None:
         """启动 TCP 监听线程，等待被邀请。"""
         self._accepting = True
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server_sock.bind(("", LAN_PORT))
-        self._server_sock.listen(1)
-        self._server_sock.settimeout(1.0)
-        self._listen_thread = threading.Thread(target=self._accept_loop, daemon=True)
-        self._listen_thread.start()
+        try:
+            self._server_sock.bind(("", LAN_PORT))
+            self._server_sock.listen(1)
+            self._server_sock.settimeout(1.0)
+            self._listen_thread = threading.Thread(target=self._accept_loop, daemon=True)
+            self._listen_thread.start()
+            log_event(f"[Lobby] TCP监听启动: {LAN_PORT}")
+        except OSError as e:
+            log_event(f"[Lobby] TCP端口绑定失败: {e}", "error")
+            self._accepting = False
+            self._server_sock = None
 
     def _stop_tcp_listen(self) -> None:
         """停止 TCP 监听。"""
@@ -453,6 +469,7 @@ def run_lobby(
     global _last_lobby
     lobby = LobbyScreen(screen, screen_size)
     lobby.start()
+    lobby.start_listening()  # 启动TCP监听
     _last_lobby = lobby
     clock = pygame.time.Clock()
 
