@@ -4,9 +4,8 @@
   - 标题 "联机对战大厅"
   - 局域网名称（子网标识）
   - 在线玩家列表：名字（左）、ID（中右）、邀请按钮（最右）
-  - 邀请按钮鼠标悬停高亮
+  - 手动输入IP连接（同电脑双开输入 127.0.0.1）
   - 底部 "返回" 按钮
-  - 背景等待动画
 """
 from __future__ import annotations
 
@@ -44,9 +43,12 @@ _BTN_TXT        = (235, 240, 245)
 _BTN_BACK       = (45, 58, 75)
 _BTN_BACK_HVR   = (72, 108, 140)
 _BTN_BORDER     = (130, 150, 170)
+_INPUT_BG       = (245, 245, 250)
+_INPUT_BORDER   = (130, 150, 170)
+_INPUT_ACTIVE_C = (72, 108, 200)
 _STATUS_WAIT    = "等待发现玩家..."
 _STATUS_CONN    = "正在连接..."
-_EMPTY_MSG      = "暂无其他玩家在线，请确认对方已进入联机大厅"
+_EMPTY_MSG      = "暂无其他玩家在线，可手动输入IP连接"
 
 
 class LobbyScreen:
@@ -67,12 +69,18 @@ class LobbyScreen:
         self._online_players: list[dict[str, Any]] = []
 
         # UI 状态
-        self._hovered_invite_idx: int = -1   # 当前悬停的邀请按钮索引
+        self._hovered_invite_idx: int = -1
         self._hovered_back: bool = False
         self._status_msg: str = _STATUS_WAIT
-        self._invited_player_id: str = ""    # 已邀请的玩家 ID
+        self._invited_player_id: str = ""
         self._waiting_response: bool = False
         self._connected: bool = False
+
+        # ── 手动IP连接 ──────────────────────────────────────
+        self._ip_input_text: str = ""
+        self._ip_input_active: bool = False
+        self._ip_cursor_visible: bool = True
+        self._ip_cursor_timer: float = 0.0
 
         # 返回按钮
         bw, bh = 140, 40
@@ -85,14 +93,24 @@ class LobbyScreen:
             (self.sw - panel_w) // 2, 80, panel_w, panel_h
         )
 
-        # 列表区域
+        # 列表区域（缩短，底部留空给IP输入框）
         list_margin = 16
         self._list_rect = pygame.Rect(
             self._panel_rect.x + list_margin,
             self._panel_rect.y + 110,
             self._panel_rect.width - list_margin * 2,
-            self._panel_rect.height - 110 - 20,
+            self._panel_rect.height - 110 - 80,  # 底部留80px给IP输入
         )
+
+        # ── IP输入框 + 连接按钮（面板底部）──────────────────
+        ip_y = self._list_rect.bottom + 10
+        self._ip_input_rect = pygame.Rect(
+            self._panel_rect.x + 20, ip_y, 360, 36
+        )
+        self._connect_btn = pygame.Rect(
+            self._ip_input_rect.right + 12, ip_y, 100, 36
+        )
+        self._hovered_connect: bool = False
 
         # 行高
         self._row_h = 48
@@ -111,7 +129,6 @@ class LobbyScreen:
         # 邀请回调结果
         self._invite_result: str = ""  # "" / "host" / "client"
         self._peer_ip: str = ""
-        self._tcp_listening = False  # 标记TCP监听是否启动
 
     def get_font(self, size: int, bold: bool = False) -> pygame.font.Font:
         if not pygame.font.get_init():
@@ -128,24 +145,17 @@ class LobbyScreen:
         self._font_cache[key] = font
         return font
 
-    def start(self) -> None:
-        """启动局域网发现 + TCP 监听（仅被邀请时）。"""
-        self._discovery.start()
-        # TCP监听延后启动，避免与另一个进程冲突
-        # self._start_tcp_listen()
+    # ── 启动 / 停止 ───────────────────────────────────────────
 
-    def start_listening(self) -> None:
-        """启动 TCP 监听（被邀请时）。"""
-        if not self._tcp_listening:
-            self._start_tcp_listen()
-            self._tcp_listening = True
+    def start(self) -> None:
+        """启动局域网发现 + TCP 监听。"""
+        self._discovery.start()
+        self._start_tcp_listen()
 
     def stop(self) -> None:
         """停止所有网络服务。"""
         self._discovery.stop()
-        if self._tcp_listening:
-            self._stop_tcp_listen()
-            self._tcp_listening = False
+        self._stop_tcp_listen()
 
     def _start_tcp_listen(self) -> None:
         """启动 TCP 监听线程，等待被邀请。"""
@@ -178,11 +188,15 @@ class LobbyScreen:
             except Exception:
                 pass
 
+    # ── 网络连接 ──────────────────────────────────────────────
+
     def _accept_loop(self) -> None:
-        """TCP 接受连接循环。"""
+        """TCP 接受连接循环（被动方 → Client 角色）。"""
         while self._accepting and not self._connected:
             try:
-                conn, addr = self._server_sock.accept()  # type: ignore
+                if self._server_sock is None:
+                    break
+                conn, addr = self._server_sock.accept()
                 conn.settimeout(5.0)
                 # 接收邀请消息
                 data = b""
@@ -195,7 +209,7 @@ class LobbyScreen:
                 if parsed:
                     msg_type, payload = parsed
                     if msg_type == "INVITE":
-                        # 自动接受（简单版）
+                        # 自动接受
                         resp = make_message("INVITE_ACCEPT", {
                             "player_id": get_player_id(),
                             "player_name": get_player_name(),
@@ -204,7 +218,6 @@ class LobbyScreen:
                         self._peer_ip = addr[0]
                         self._connected = True
                         self._client_sock = conn
-                        # 我是被邀请方 → Client 角色
                         self._invite_result = "client"
                         self._game_client = GameClient(conn)
                         return
@@ -213,8 +226,8 @@ class LobbyScreen:
             except Exception:
                 continue
 
-    def _send_invite(self, peer_ip: str, peer_id: str) -> None:
-        """向目标玩家发送邀请。"""
+    def _send_invite(self, peer_ip: str, peer_id: str = "") -> None:
+        """向目标IP发送邀请（主动方 → Host 角色）。"""
         if self._waiting_response or self._connected:
             return
 
@@ -248,7 +261,6 @@ class LobbyScreen:
                     if msg_type == "INVITE_ACCEPT":
                         self._connected = True
                         self._peer_ip = peer_ip
-                        # 我是邀请方 → Host 角色
                         self._invite_result = "host"
                         self._game_host = GameHost(sock)
                     elif msg_type == "INVITE_REJECT":
@@ -267,6 +279,8 @@ class LobbyScreen:
         t = threading.Thread(target=_connect, daemon=True)
         t.start()
 
+    # ── 事件处理 ──────────────────────────────────────────────
+
     def handle_event(self, event: pygame.event.Event) -> None:
         if self._connected:
             return
@@ -274,10 +288,24 @@ class LobbyScreen:
         if event.type == pygame.MOUSEMOTION:
             self._hovered_back = self._back_btn.collidepoint(event.pos)
             self._hovered_invite_idx = self._get_hovered_invite_idx(event.pos)
+            self._hovered_connect = self._connect_btn.collidepoint(event.pos)
+            # 点击输入框激活
+            if self._ip_input_rect.collidepoint(event.pos):
+                self._ip_input_active = True
+            else:
+                self._ip_input_active = False
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self._back_btn.collidepoint(event.pos):
-                return  # 由外层处理退出
+            # 点击连接按钮
+            if self._connect_btn.collidepoint(event.pos):
+                self._on_connect_click()
+                return
+
+            # 点击IP输入框
+            if self._ip_input_rect.collidepoint(event.pos):
+                self._ip_input_active = True
+            else:
+                self._ip_input_active = False
 
             # 点击邀请按钮
             idx = self._get_hovered_invite_idx(event.pos)
@@ -285,8 +313,25 @@ class LobbyScreen:
                 player = self._online_players[idx]
                 self._send_invite(player["ip"], player["player_id"])
 
+        elif event.type == pygame.KEYDOWN and self._ip_input_active:
+            if event.key == pygame.K_RETURN:
+                self._on_connect_click()
+            elif event.key == pygame.K_BACKSPACE:
+                self._ip_input_text = self._ip_input_text[:-1]
+            elif event.unicode.isprintable() and event.unicode:
+                if len(self._ip_input_text) < 21:  # IPv6最长约21字符
+                    self._ip_input_text += event.unicode
+
+    def _on_connect_click(self) -> None:
+        """点击"连接"按钮：向输入的IP发送邀请。"""
+        ip = self._ip_input_text.strip()
+        if not ip:
+            self._status_msg = "请输入IP地址"
+            return
+        log_event(f"[Lobby] 手动连接: {ip}:{LAN_PORT}")
+        self._send_invite(ip)
+
     def _get_hovered_invite_idx(self, pos: tuple[int, int]) -> int:
-        """检测鼠标悬停在哪个邀请按钮上。"""
         for i, player in enumerate(self._online_players):
             btn_rect = self._get_invite_btn_rect(i)
             if btn_rect and btn_rect.collidepoint(pos):
@@ -294,7 +339,6 @@ class LobbyScreen:
         return -1
 
     def _get_invite_btn_rect(self, idx: int) -> pygame.Rect | None:
-        """获取第 idx 行的邀请按钮 Rect。"""
         y = self._list_rect.y + idx * self._row_h
         if y + self._row_h > self._list_rect.bottom:
             return None
@@ -305,14 +349,24 @@ class LobbyScreen:
             32,
         )
 
+    # ── 更新 ──────────────────────────────────────────────────
+
     def update(self, dt: float) -> None:
-        """更新在线玩家列表。"""
+        """更新在线玩家列表 + 光标闪烁。"""
         self._online_players = self._discovery.get_online_players()
         if not self._waiting_response and not self._connected:
             if self._online_players:
                 self._status_msg = f"已发现 {len(self._online_players)} 位玩家"
             else:
                 self._status_msg = _STATUS_WAIT
+
+        # 光标闪烁
+        self._ip_cursor_timer += dt
+        if self._ip_cursor_timer >= 0.5:
+            self._ip_cursor_timer = 0.0
+            self._ip_cursor_visible = not self._ip_cursor_visible
+
+    # ── 绘制 ──────────────────────────────────────────────────
 
     def draw(self) -> None:
         """绘制大厅界面。"""
@@ -322,6 +376,10 @@ class LobbyScreen:
         title_font = self.get_font(30, bold=True)
         title_surf = title_font.render("联机对战大厅", True, _TITLE_COLOR)
         self.screen.blit(title_surf, title_surf.get_rect(centerx=self.sw // 2, y=25))
+
+        # ── 面板背景 ───────────────────────────────────────────
+        pygame.draw.rect(self.screen, _PANEL_BG, self._panel_rect, border_radius=10)
+        pygame.draw.rect(self.screen, _PANEL_BORDER, self._panel_rect, width=1, border_radius=10)
 
         # ── 局域网名称 ─────────────────────────────────────────
         subnet = self._discovery.get_subnet_name()
@@ -348,27 +406,11 @@ class LobbyScreen:
             (self._panel_rect.right - 12, sep_y), 1,
         )
 
-        # ── 面板背景 ───────────────────────────────────────────
-        pygame.draw.rect(self.screen, _PANEL_BG, self._panel_rect, border_radius=10)
-        pygame.draw.rect(self.screen, _PANEL_BORDER, self._panel_rect, width=1, border_radius=10)
-
-        # 重绘标题行（在面板上）
-        self.screen.blit(lan_surf, (self._panel_rect.x + 16, self._panel_rect.y + 12))
-        self.screen.blit(me_surf, (self._panel_rect.x + 16, self._panel_rect.y + 38))
-        self.screen.blit(status_surf, (self._panel_rect.x + 16, self._panel_rect.y + 62))
-        pygame.draw.line(
-            self.screen, _PANEL_BORDER,
-            (self._panel_rect.x + 12, sep_y),
-            (self._panel_rect.right - 12, sep_y), 1,
-        )
-
         # ── 列表表头 ───────────────────────────────────────────
         header_font = self.get_font(13, bold=True)
         hdr_name = header_font.render("玩家名字", True, _ID_CLR)
-        hdr_id = header_font.render("ID", True, _ID_CLR)
         hdr_action = header_font.render("操作", True, _ID_CLR)
         self.screen.blit(hdr_name, (self._list_rect.x + 12, self._list_rect.y - 18))
-        self.screen.blit(hdr_id, (self._list_rect.x + 280, self._list_rect.y - 18))
         self.screen.blit(hdr_action, (self._list_rect.right - self._invite_btn_w - 8, self._list_rect.y - 18))
 
         # ── 玩家列表 ───────────────────────────────────────────
@@ -382,7 +424,47 @@ class LobbyScreen:
         else:
             self._draw_player_list()
 
-        # ── 连接中提示 ─────────────────────────────────────────
+        # ── IP输入框 + 连接按钮 ────────────────────────────────
+        ip_label_font = self.get_font(13)
+        ip_label = ip_label_font.render("手动连接IP:", True, _SUBTITLE_CLR)
+        self.screen.blit(ip_label, (self._ip_input_rect.x, self._ip_input_rect.y - 16))
+
+        # 输入框
+        border_color = _INPUT_ACTIVE_C if self._ip_input_active else _INPUT_BORDER
+        outer = self._ip_input_rect.inflate(4, 4)
+        pygame.draw.rect(self.screen, border_color, outer, border_radius=6)
+        pygame.draw.rect(self.screen, _INPUT_BG, self._ip_input_rect, border_radius=4)
+
+        # 输入框文字
+        ip_font = self.get_font(16)
+        txt_surf = ip_font.render(self._ip_input_text, True, (30, 30, 30))
+        clip = self.screen.get_clip()
+        self.screen.set_clip(self._ip_input_rect)
+        self.screen.blit(txt_surf, (self._ip_input_rect.x + 8, self._ip_input_rect.centery - txt_surf.get_height() // 2))
+        # 光标
+        if self._ip_input_active and self._ip_cursor_visible:
+            cx = self._ip_input_rect.x + 8 + txt_surf.get_width() + 2
+            pygame.draw.line(
+                self.screen, (30, 30, 30),
+                (cx, self._ip_input_rect.y + 6),
+                (cx, self._ip_input_rect.bottom - 6), 2,
+            )
+        # 占位提示
+        if not self._ip_input_text and not self._ip_input_active:
+            hint_font = self.get_font(14)
+            hint_surf = hint_font.render("127.0.0.1 (同电脑双开)", True, (160, 165, 175))
+            self.screen.blit(hint_surf, (self._ip_input_rect.x + 8, self._ip_input_rect.centery - hint_surf.get_height() // 2))
+        self.screen.set_clip(clip)
+
+        # 连接按钮
+        conn_color = _BTN_INVITE_HVR if self._hovered_connect else _BTN_INVITE
+        pygame.draw.rect(self.screen, conn_color, self._connect_btn, border_radius=6)
+        pygame.draw.rect(self.screen, _BTN_BORDER, self._connect_btn, width=1, border_radius=6)
+        conn_font = self.get_font(15, bold=True)
+        conn_surf = conn_font.render("连接", True, _BTN_TXT)
+        self.screen.blit(conn_surf, conn_surf.get_rect(center=self._connect_btn.center))
+
+        # ── 连接成功提示 ───────────────────────────────────────
         if self._connected:
             overlay = pygame.Surface((self.sw, self.sh), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 150))
@@ -412,21 +494,17 @@ class LobbyScreen:
 
             row_rect = pygame.Rect(self._list_rect.x, y, self._list_rect.width, self._row_h)
 
-            # 行背景（悬停高亮）
             is_hovered = (i == self._hovered_invite_idx)
             bg_color = _ROW_HOVER if is_hovered else _ROW_BG
             pygame.draw.rect(self.screen, bg_color, row_rect, border_radius=4)
 
-            # 玩家名字（左）
             name_surf = name_font.render(player.get("name", "未知"), True, _NAME_CLR)
             self.screen.blit(name_surf, (row_rect.x + 16, y + (self._row_h - name_surf.get_height()) // 2))
 
-            # 玩家 ID（中右）
             pid = player.get("player_id", "")[:8].upper()
             id_surf = id_font.render(f"ID: {pid}", True, _ID_CLR)
             self.screen.blit(id_surf, (row_rect.x + 260, y + (self._row_h - id_surf.get_height()) // 2))
 
-            # 邀请按钮（最右）
             invite_rect = self._get_invite_btn_rect(i)
             if invite_rect:
                 is_invited = player.get("player_id") == self._invited_player_id
@@ -444,7 +522,6 @@ class LobbyScreen:
                 invite_surf = btn_font.render(btn_label, True, _BTN_TXT)
                 self.screen.blit(invite_surf, invite_surf.get_rect(center=invite_rect.center))
 
-                # 行分隔线
                 pygame.draw.line(
                     self.screen, (50, 65, 85),
                     (row_rect.x + 8, row_rect.bottom - 1),
@@ -470,7 +547,6 @@ def run_lobby(
     global _last_lobby
     lobby = LobbyScreen(screen, screen_size)
     lobby.start()
-    lobby.start_listening()  # 启动TCP监听
     _last_lobby = lobby
     clock = pygame.time.Clock()
 
