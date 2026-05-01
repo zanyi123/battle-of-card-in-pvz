@@ -32,20 +32,16 @@ _BTN_TXT       = (235, 240, 245)
 
 
 class RegisterScreen:
-    """玩家注册/切换账号界面。"""
+    """玩家首次注册界面。"""
 
-    def __init__(self, screen: pygame.Surface, screen_size: tuple[int, int], existing_name: str = "") -> None:
+    def __init__(self, screen: pygame.Surface, screen_size: tuple[int, int]) -> None:
         self.screen = screen
         self.sw, self.sh = screen_size
         self._font_cache: dict[tuple[int, bool], pygame.font.Font] = {}
         self._cjk_font_path = Path("assets/fonts/SourceHanSansSC-Regular.otf")
 
-        # 是否已有账号
-        self._has_existing = bool(existing_name)
-        self._existing_name = existing_name
-
         # 输入框状态
-        self._input_text: str = existing_name
+        self._input_text: str = ""
         self._input_active: bool = True
         self._cursor_visible: bool = True
         self._cursor_timer: float = 0.0
@@ -56,28 +52,20 @@ class RegisterScreen:
             (self.sw - iw) // 2, self.sh // 2 - 10, iw, ih
         )
 
-        # 确认按钮 Rect（改用两个按钮：使用现有账号 / 重新注册）
+        # 确认按钮 Rect
         bw, bh = 140, 42
-        self._btn_use = pygame.Rect(
-            (self.sw - bw - 10) // 2, self._input_rect.bottom + 30, bw, bh
-        )
-        self._btn_re = pygame.Rect(
-            (self.sw + bw + 10) // 2, self._input_rect.bottom + 30, bw, bh
+        self._btn_rect = pygame.Rect(
+            (self.sw - bw) // 2, self._input_rect.bottom + 30, bw, bh
         )
         self._btn_hover: bool = False
 
         # 注册完成标志
         self._done: bool = False
-        self._done_action: str = ""  # "use" 或 "renew"
         self._error_msg: str = ""
 
     @property
     def done(self) -> bool:
         return self._done
-
-    @property
-    def action(self) -> str:
-        return self._done_action
 
     def get_font(self, size: int, bold: bool = False) -> pygame.font.Font:
         if not pygame.font.get_init():
@@ -100,27 +88,19 @@ class RegisterScreen:
             return
 
         if event.type == pygame.MOUSEMOTION:
-            self._btn_hover = self._btn_use.collidepoint(event.pos) or self._btn_re.collidepoint(event.pos)
+            self._btn_hover = self._btn_rect.collidepoint(event.pos)
             self._input_active = self._input_rect.collidepoint(event.pos)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self._btn_use.collidepoint(event.pos):
-                self._done_action = "use"
-                self._done = True
-            elif self._btn_re.collidepoint(event.pos):
-                self._input_text = ""  # 清空输入框，准备输入新名字
+            if self._btn_rect.collidepoint(event.pos):
+                self._try_register()
+            self._input_active = self._input_rect.collidepoint(event.pos)
 
         elif event.type == pygame.KEYDOWN:
             if not self._input_active:
                 return
             if event.key == pygame.K_RETURN:
-                if self._has_existing:
-                    # 重新注册模式：按回车表示确认重新注册
-                    self._try_register()
-                else:
-                    # 首次注册：按回车确认
-                    self._done_action = "new"
-                    self._done = True
+                self._try_register()
             elif event.key == pygame.K_BACKSPACE:
                 self._input_text = self._input_text[:-1]
                 self._error_msg = ""
@@ -140,7 +120,7 @@ class RegisterScreen:
             self._cursor_visible = not self._cursor_visible
 
     def _try_register(self) -> None:
-        """尝试注册/创建新账号。"""
+        """尝试注册。"""
         name = self._input_text.strip()
         if not name:
             self._error_msg = "名字不能为空！"
@@ -149,13 +129,7 @@ class RegisterScreen:
             self._error_msg = "名字至少 1 个字符"
             return
 
-        # 删除现有账号
-        from core.player_profile import get_profile_path
-        if get_profile_path().exists():
-            get_profile_path().unlink()
-        
         create_profile(name)
-        self._done_action = "new"
         self._done = True
 
     def draw(self) -> None:
@@ -164,10 +138,7 @@ class RegisterScreen:
 
         # ── 标题 ───────────────────────────────────────────────
         title_font = self.get_font(32, bold=True)
-        if self._has_existing:
-            title_surf = title_font.render("选择账号", True, _TITLE_COLOR)
-        else:
-            title_surf = title_font.render("欢迎来到 PVZ 植物卡牌对战", True, _TITLE_COLOR)
+        title_surf = title_font.render("欢迎来到 PVZ 植物卡牌对战", True, _TITLE_COLOR)
         self.screen.blit(
             title_surf,
             title_surf.get_rect(centerx=self.sw // 2, y=self.sh // 2 - 120),
@@ -175,18 +146,11 @@ class RegisterScreen:
 
         # ── 副标题 ─────────────────────────────────────────────
         sub_font = self.get_font(18)
-        if self._has_existing:
-            sub_surf = sub_font.render(f"检测到已有账号: {self._existing_name}", True, _SUBTITLE_CLR)
-            self.screen.blit(
-                sub_surf,
-                sub_surf.get_rect(centerx=self.sw // 2, y=self.sh // 2 - 65),
-            )
-        else:
-            sub_surf = sub_font.render("请输入你的玩家名字", True, _SUBTITLE_CLR)
-            self.screen.blit(
-                sub_surf,
-                sub_surf.get_rect(centerx=self.sw // 2, y=self.sh // 2 - 65),
-            )
+        sub_surf = sub_font.render("请输入你的玩家名字", True, _SUBTITLE_CLR)
+        self.screen.blit(
+            sub_surf,
+            sub_surf.get_rect(centerx=self.sw // 2, y=self.sh // 2 - 65),
+        )
 
         # ── 输入框 ─────────────────────────────────────────────
         border_color = _INPUT_ACTIVE if self._input_active else _INPUT_BORDER
@@ -225,65 +189,37 @@ class RegisterScreen:
                 err_surf.get_rect(centerx=self.sw // 2, y=self._input_rect.bottom + 6),
             )
 
-        # ── 按钮区域 ───────────────────────────────────────────
-        if self._has_existing:
-            # 两个按钮：使用现有账号 / 重新注册
-            btn_use_color = _BTN_HOVER if self._btn_hover and self._btn_use.collidepoint(pygame.mouse.get_pos()) else _BTN_ACTIVE
-            btn_re_color = _BTN_HOVER if self._btn_hover and self._btn_re.collidepoint(pygame.mouse.get_pos()) else _BTN_ACTIVE
-            
-            pygame.draw.rect(self.screen, btn_use_color, self._btn_use, border_radius=8)
-            pygame.draw.rect(self.screen, _BTN_BORDER, self._btn_use, width=2, border_radius=8)
-            btn_font = self.get_font(18, bold=True)
-            btn_use_surf = btn_font.render("使用此账号", True, _BTN_TXT)
-            self.screen.blit(btn_use_surf, btn_use_surf.get_rect(center=self._btn_use.center))
-            
-            pygame.draw.rect(self.screen, btn_re_color, self._btn_re, border_radius=8)
-            pygame.draw.rect(self.screen, _BTN_BORDER, self._btn_re, width=2, border_radius=8)
-            btn_re_surf = btn_font.render("重新注册", True, _BTN_TXT)
-            self.screen.blit(btn_re_surf, btn_re_surf.get_rect(center=self._btn_re.center))
-        else:
-            # 单个按钮：确认注册
-            btn_color = _BTN_HOVER if self._btn_hover else _BTN_ACTIVE
-            pygame.draw.rect(self.screen, btn_color, self._btn_use, border_radius=8)  # 复用 btn_use
-            pygame.draw.rect(self.screen, _BTN_BORDER, self._btn_use, width=2, border_radius=8)
-            btn_font = self.get_font(18, bold=True)
-            btn_surf = btn_font.render("确认注册", True, _BTN_TXT)
-            self.screen.blit(btn_surf, btn_surf.get_rect(center=self._btn_use.center))
+        # ── 确认按钮 ───────────────────────────────────────────
+        btn_color = _BTN_HOVER if self._btn_hover else _BTN_ACTIVE
+        pygame.draw.rect(self.screen, btn_color, self._btn_rect, border_radius=8)
+        pygame.draw.rect(self.screen, _BTN_BORDER, self._btn_rect, width=2, border_radius=8)
+        btn_font = self.get_font(18, bold=True)
+        btn_surf = btn_font.render("确认注册", True, _BTN_TXT)
+        self.screen.blit(btn_surf, btn_surf.get_rect(center=self._btn_rect.center))
 
         # ── 底部提示 ───────────────────────────────────────────
-        if self._has_existing:
-            hint_font = self.get_font(13)
-            hint_surf = hint_font.render("提示: 按 '重新注册' 按钮 或 输入新名字来切换账号", True, _HINT_COLOR)
-            self.screen.blit(
-                hint_surf,
-                hint_surf.get_rect(centerx=self.sw // 2, y=self._btn_re.bottom + 20),
-            )
-        else:
-            hint_font = self.get_font(13)
-            hint_surf = hint_font.render("你的唯一 ID 将在注册后自动生成（UUID4）", True, _HINT_COLOR)
-            self.screen.blit(
-                hint_surf,
-                hint_surf.get_rect(centerx=self.sw // 2, y=self._btn_use.bottom + 20),
-            )
+        hint_font = self.get_font(13)
+        hint_surf = hint_font.render("你的唯一 ID 将在注册后自动生成（UUID4）", True, _HINT_COLOR)
+        self.screen.blit(
+            hint_surf,
+            hint_surf.get_rect(centerx=self.sw // 2, y=self._btn_rect.bottom + 20),
+        )
 
 
-def ensure_registered(screen: pygame.Surface, screen_size: tuple[int, int], force_reregister: bool = False) -> tuple[bool, str]:
+def ensure_registered(screen: pygame.Surface, screen_size: tuple[int, int]) -> bool:
     """确保玩家已注册，未注册则弹出注册界面。
 
     Args:
         screen: pygame 屏幕
         screen_size: (width, height)
-        force_reregister: 强制重新注册（用于多开切换账号）
 
     Returns:
-        (is_registered, action) action为"use"或"new"，"new"表示创建新账号
+        True 已注册，False 用户关闭窗口
     """
-    if is_registered() and not force_reregister:
-        return True, "use"
+    if is_registered():
+        return True
 
-    # 获取已有账号（如果有）
-    existing_name = get_player_name() if is_registered() else ""
-    reg = RegisterScreen(screen, screen_size, existing_name)
+    reg = RegisterScreen(screen, screen_size)
     clock = pygame.time.Clock()
 
     while not reg.done:
@@ -291,11 +227,11 @@ def ensure_registered(screen: pygame.Surface, screen_size: tuple[int, int], forc
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                return False, ""
+                return False
             reg.handle_event(event)
 
         reg.update(dt)
         reg.draw()
         pygame.display.flip()
 
-    return True, reg.action
+    return True

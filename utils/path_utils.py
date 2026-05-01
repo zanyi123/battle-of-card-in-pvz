@@ -14,15 +14,6 @@ import os
 import sys
 from pathlib import Path
 
-# 多开支持：根据进程ID生成独立的数据目录
-def _get_multi_instance_suffix() -> str:
-    """获取多开实例后缀（如 '_p1', '_p2'）。
-    """
-    pid = os.getpid()
-    # 进程ID对数取余，避免编号太大
-    suffix = f"_p{pid % 100}"
-    return suffix
-
 
 def get_resource_path(relative_path: str) -> Path:
     """获取只读资源文件的绝对路径（兼容打包后）。
@@ -43,25 +34,19 @@ def get_resource_path(relative_path: str) -> Path:
 
 
 def get_user_data_dir() -> Path:
-    """获取可写用户数据目录（支持多开）。
+    """获取可写用户数据目录。
 
     打包模式下使用用户主目录下的专用文件夹，避免写权限问题。
-    开发模式下根据进程ID生成独立目录。
+    开发模式下直接使用项目根目录。
 
     Returns:
         可写目录路径（自动创建）
     """
     if hasattr(sys, "_MEIPASS"):
-        # 打包模式：使用 .pvz_card_game/
         data_dir = Path(os.path.expanduser("~")) / ".pvz_card_game"
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir
-    else:
-        # 开发模式：使用 .pvz_card_game_p{pid}/
-        multi_suffix = _get_multi_instance_suffix()
-        data_dir = Path(os.path.abspath(".")) / f".pvz_card_game{multi_suffix}"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir
+    return Path(os.path.abspath("."))
 
 
 def get_save_data_path() -> Path:

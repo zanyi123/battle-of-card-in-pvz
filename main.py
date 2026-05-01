@@ -42,7 +42,6 @@ from ui.loading_screen import LoadingScreen, run_loading_screen
 from ui.main_menu import MainMenu, run_main_menu
 from ui.register_screen import ensure_registered
 from ui.renderer import Renderer
-from core.player_profile import get_player_name
 
 
 # ── 常量 ─────────────────────────────────────────────────────
@@ -915,17 +914,9 @@ def main() -> None:
 
         elif current_scene == Scene.MENU:
             # ── 确保玩家已注册 ─────────────────────────────
-            # 多开支持：可以强制重新注册
-            registered, action = ensure_registered(screen, SCREEN_SIZE, force_reregister=False)
-            if not registered:
+            if not ensure_registered(screen, SCREEN_SIZE):
                 pygame.quit()
                 return
-
-            # action: "use" = 使用现有账号，"new" = 重新注册
-            if action == "new":
-                log_event("[Player] 已切换到新账号")
-            else:
-                log_event(f"[Player] 使用现有账号: {get_player_name()}")
 
             # ── 主菜单 ───────────────────────────────────────
             action, selected_world = run_main_menu(screen, music_manager, settings)
