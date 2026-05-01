@@ -403,11 +403,37 @@ def run_online_client(
     # P2 预出牌缓存（本地暂存，确认后一次性发送）
     p2_pending_card_ids: list[int] = []
 
-    # 等待第一个状态
+    # 等待第一个状态（Host 需要完成先手选择，给足时间）
+    log_event("[OnlineClient] 等待 Host 开始游戏...")
+    wait_font = None
+    try:
+        fpath = Path("assets/fonts/SourceHanSansSC-Regular.otf")
+        if fpath.exists():
+            wait_font = pygame.font.Font(str(fpath), 22)
+        else:
+            wait_font = pygame.font.SysFont("simhei", 22)
+    except Exception:
+        wait_font = pygame.font.SysFont("simhei", 22)
+
     remote_state = client.get_latest_state()
     timeout_counter = 0
-    while not remote_state and timeout_counter < 300:  # 最多等 5 秒
-        clock.tick(FPS)
+    while not remote_state and timeout_counter < 1800:  # 最多等 30 秒
+        dt = clock.tick(FPS) / 1000.0
+
+        # 显示等待画面
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                client.close()
+                return
+
+        screen.fill((26, 43, 58))
+        dots = "." * ((timeout_counter // 30) % 4)
+        wait_surf = wait_font.render(f"等待 Host 开始游戏{dots}", True, (190, 210, 230))
+        screen.blit(wait_surf, wait_surf.get_rect(center=(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2)))
+        hint_surf = wait_font.render("（请在 Host 窗口完成先手选择）", True, (130, 145, 165))
+        screen.blit(hint_surf, hint_surf.get_rect(center=(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2 + 40)))
+        pygame.display.flip()
+
         remote_state = client.get_latest_state()
         timeout_counter += 1
 
