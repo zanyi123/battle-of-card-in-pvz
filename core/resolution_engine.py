@@ -46,7 +46,7 @@ class ResolutionEngine:
     # 阶段4效果ID（增伤）
     _PHASE_4_EFFECTS = frozenset({
         'DMG_BUFF_3X_SUPPORT', 'SUPPORT_DMG_MULTIPLIER',
-        'DMG_BUFF_ADD_2', 'BOOST_ATK_HEAL'
+        'DMG_BUFF_ADD_2'
     })
     
     # 阶段5效果ID（卡牌交互）
@@ -173,6 +173,10 @@ class ResolutionEngine:
         
         # 最终伤害结算
         p1_damage, p2_damage = self._finalize_damage(state, logs)
+        
+        # ── block_turn：抵挡一回合，免疫所有伤害 ──
+        p1_damage = self._apply_block_turn("P1", p1_damage, state, logs)
+        p2_damage = self._apply_block_turn("P2", p2_damage, state, logs)
         
         # 应用伤害
         self._apply_damage("P1", p1_damage, state, logs, "phase_based")
@@ -561,35 +565,40 @@ class ResolutionEngine:
             # 辅助不参与克制
         }
 
+        # ── 判断双方阵营克制关系 ──
+        # 克制关系：射→坦、坦→法、法→射（辅助不参与）
+        # 规则：
+        #   A克制B + A.atk > B.atk → B受溢出伤害(A-B)，A受0伤害
+        #   A克制B + A.atk ≤ B.atk → 双方都造成0伤害（被克制方攻击清0）
+        #   无克制 → 双方全额互伤
+        p1_faction = str(self._card_value(p1_main, "faction", "")) if p1_main else ""
+        p2_faction = str(self._card_value(p2_main, "faction", "")) if p2_main else ""
+
+        # P1是否克制P2 / P2是否克制P1
+        p1_counters_p2 = (p1_main is not None and p2_main is not None
+                         and _FACTION_COUNTER.get(p1_faction, "") == p2_faction)
+        p2_counters_p1 = (p1_main is not None and p2_main is not None
+                         and _FACTION_COUNTER.get(p2_faction, "") == p1_faction)
+
         # ── 计算 P1 对 P2 造成的伤害 ──
         p2_damage = 0
-        if p1_main is not None:
-            p1_faction = str(self._card_value(p1_main, "faction", ""))
-            p1_atk = int(self._card_value(p1_main, "atk", 0))
-            
-            if not (temp.get("P1_atk_disabled") or temp.get("P1_main_atk_zero")):
-                p1_atk += int(temp.get("P1_atk_boost", 0))
+        if p1_main is not None and not (temp.get("P1_atk_disabled") or temp.get("P1_main_atk_zero")):
+            p1_atk = int(self._card_value(p1_main, "atk", 0)) + int(temp.get("P1_atk_boost", 0))
             p1_atk = max(0, p1_atk)
-            
-            mult = float(temp.get("P1_dmg_multiplier", 1.0))
-            base_damage = int(p1_atk * mult)
-            
-            # 判断阵营克制
-            is_counter = False
-            p2_atk_raw = 0
-            if p2_main is not None:
-                p2_faction = str(self._card_value(p2_main, "faction", ""))
-                countered_faction = _FACTION_COUNTER.get(p1_faction, "")
-                is_counter = (countered_faction == p2_faction)
-                p2_atk_raw = int(self._card_value(p2_main, "atk", 0))
-            
-            if is_counter:
-                # 克制时：伤害 = (攻击方atk × 倍率) - 防御方atk
-                p2_damage = max(0, base_damage - p2_atk_raw)
+            p1_mult = float(temp.get("P1_dmg_multiplier", 1.0))
+            p1_base = int(p1_atk * p1_mult)
+            p2_atk_raw = int(self._card_value(p2_main, "atk", 0)) if p2_main else 0
+
+            if p1_counters_p2:
+                # P1克制P2：溢出伤害 = P1_base - P2_raw
+                p2_damage = max(0, p1_base - p2_atk_raw)
+            elif p2_counters_p1:
+                # P2克制P1：P1被克制，P1攻击清0
+                p2_damage = 0
             else:
-                # 无克制：全额制，伤害 = base_damage
-                p2_damage = base_damage
-            
+                # 无克制：全额制
+                p2_damage = p1_base
+
             # 平坦减伤
             flat_reduce = int(temp.get("P2_flat_dmg_reduce", 0))
             p1_card_count = max(1, len(state.get("played_cards", {}).get("P1", [])))
@@ -597,33 +606,23 @@ class ResolutionEngine:
 
         # ── 计算 P2 对 P1 造成的伤害 ──
         p1_damage = 0
-        if p2_main is not None:
-            p2_faction = str(self._card_value(p2_main, "faction", ""))
-            p2_atk = int(self._card_value(p2_main, "atk", 0))
-            
-            if not (temp.get("P2_atk_disabled") or temp.get("P2_main_atk_zero")):
-                p2_atk += int(temp.get("P2_atk_boost", 0))
+        if p2_main is not None and not (temp.get("P2_atk_disabled") or temp.get("P2_main_atk_zero")):
+            p2_atk = int(self._card_value(p2_main, "atk", 0)) + int(temp.get("P2_atk_boost", 0))
             p2_atk = max(0, p2_atk)
-            
-            mult = float(temp.get("P2_dmg_multiplier", 1.0))
-            base_damage = int(p2_atk * mult)
-            
-            # 判断阵营克制
-            is_counter = False
-            p1_atk_raw = 0
-            if p1_main is not None:
-                p1_faction = str(self._card_value(p1_main, "faction", ""))
-                countered_faction = _FACTION_COUNTER.get(p2_faction, "")
-                is_counter = (countered_faction == p1_faction)
-                p1_atk_raw = int(self._card_value(p1_main, "atk", 0))
-            
-            if is_counter:
-                # 克制时：伤害 = (攻击方atk × 倍率) - 防御方atk
-                p1_damage = max(0, base_damage - p1_atk_raw)
+            p2_mult = float(temp.get("P2_dmg_multiplier", 1.0))
+            p2_base = int(p2_atk * p2_mult)
+            p1_atk_raw = int(self._card_value(p1_main, "atk", 0)) if p1_main else 0
+
+            if p2_counters_p1:
+                # P2克制P1：溢出伤害 = P2_base - P1_raw
+                p1_damage = max(0, p2_base - p1_atk_raw)
+            elif p1_counters_p2:
+                # P1克制P2：P2被克制，P2攻击清0
+                p1_damage = 0
             else:
-                # 无克制：全额制，伤害 = base_damage
-                p1_damage = base_damage
-            
+                # 无克制：全额制
+                p1_damage = p2_base
+
             # 平坦减伤
             flat_reduce = int(temp.get("P1_flat_dmg_reduce", 0))
             p2_card_count = max(1, len(state.get("played_cards", {}).get("P2", [])))

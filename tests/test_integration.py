@@ -137,6 +137,7 @@ def test_armor_pierce_bypasses_shield():
     from core.resolution_engine import ResolutionEngine
     re = ResolutionEngine()
     # P1 有护盾 10，但 P2 有破甲 → P1 护盾应被无视
+    # 使用无克制关系的阵营组合：P1(辅) vs P2(法) → 无克制，全额互伤
     state = {
         "players": {
             "P1": {"hp": 10, "max_hp": 10, "buffs": [{"type": "shield", "value": 10, "duration": -1, "icon_code": "shield"}]},
@@ -145,7 +146,7 @@ def test_armor_pierce_bypasses_shield():
         "played_cards": {"P1": [], "P2": []},
         "temp": {"P2_armor_pierce": True},
     }
-    p1_main = make_card("P1主", "坦", "主", 0, 2)
+    p1_main = make_card("P1主", "辅", "主", 0, 2)
     p2_main = make_card("P2主", "法", "主", 8, 2)
     dmg1, dmg2 = re._resolve_main_damage(p1_main, p2_main, state)
     assert dmg1 == 8, f"P1应受8伤 got {dmg1}"
@@ -170,11 +171,11 @@ def test_reflect_atk_bounces_damage():
         "played_cards": {"P1": [], "P2": []},
         "temp": {"P1_reflect_atk": True},
     }
-    # P2_ATK=5 > P1_ATK=0 → 正常情况 P1 受 5 伤，但 P1 有反弹 → P2 受 5 伤
-    p1_main = make_card("P1主", "坦", "主", 0, 2)
+    # P1(辅) vs P2(法) → 无克制，全额互伤，P1_ATK=0, P2_ATK=5
+    p1_main = make_card("P1主", "辅", "主", 0, 2)
     p2_main = make_card("P2主", "法", "主", 5, 2)
     dmg1, dmg2 = re._resolve_main_damage(p1_main, p2_main, state)
-    assert dmg1 == 5  # P1 要受 5 伤
+    assert dmg1 == 5  # P1 要受 5 伤（无克制全额）
 
     # 反弹处理
     dmg1_after, dmg2_after = re._apply_reflect(dmg1, dmg2, state, [])
@@ -193,15 +194,15 @@ def test_reduce_dmg_2_flat_reduction():
             "P2": {"hp": 10, "max_hp": 10, "buffs": []},
         },
         "played_cards": {
-            "P1": [make_card("P1主", "坦", "主", 0, 2)],
+            "P1": [make_card("P1主", "辅", "主", 0, 2)],
             "P2": [make_card("P2主", "法", "主", 8, 2)],
         },
         "temp": {"P1_flat_dmg_reduce": 2},  # P1 被攻击时每张卡减 2 伤
     }
-    p1_main = make_card("P1主", "坦", "主", 0, 2)
+    p1_main = make_card("P1主", "辅", "主", 0, 2)
     p2_main = make_card("P2主", "法", "主", 8, 2)
     dmg1, dmg2 = re._resolve_main_damage(p1_main, p2_main, state)
-    # P2_ATK=8, P1_ATK=0, 净伤=8, P2打出1张卡, 减伤2*1=2, 最终6
+    # P1(辅)vsP2(法)无克制全额：P2_ATK=8, 减伤2*1=2, 最终6
     assert dmg1 == 6, f"P1应受6伤（8-2减伤）, got {dmg1}"
 
 
@@ -239,12 +240,11 @@ def test_resolution_engine_support_before_main():
     state["played_cards"]["P2"] = [p2_main]
 
     logs = re.resolve_clash([p1_main, p1_support], [p2_main], state)
-    # 全额制：P1 增伤后 atk=3+2=5，P2 atk=4
-    # 新克制关系：坦克(TK) → 克制 → 法师(FA)
-    # P2(坦克4) 克制 P1(法师3)，溢出伤害 = 4-3=1，总伤害 = 4+1=5
-    # P1 打 P2 → 5 伤，P2 打 P1 → 5 伤（含溢出）
-    # 并且 P1 额外回血 2（HP=8+2=10，不超过 max_hp）
+    # 克制关系：坦→法，P2(坦4) 克制 P1(法3原始atk)
+    #   P2对P1：克制伤害 = 4 - 3(原始atk) = 1
+    #   P1对P2：P1(法)被克制，攻击清0
+    # P1 额外回血 2（HP=8+2=10），再受P2溢出伤害1 = HP=9
     p1_hp = state["players"]["P1"]["hp"]
     p2_hp = state["players"]["P2"]["hp"]
-    assert p2_hp == 5, f"P2应受5伤(HP=5), got p2_hp={p2_hp}"
-    assert p1_hp == 5, f"P1应回血2后被P2打5伤(HP=5), got p1_hp={p1_hp}"
+    assert p2_hp == 10, f"P2应受0伤(P1被克制清0), got p2_hp={p2_hp}"
+    assert p1_hp == 9, f"P1应回血2到10再受1伤(HP=9), got p1_hp={p1_hp}"

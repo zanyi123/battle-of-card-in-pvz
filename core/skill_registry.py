@@ -91,6 +91,14 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "desc": "为自身添加1点护盾值",
         # 拥有此技能的卡：3-坚果墙
     },
+    "SHIELD_2": {
+        "category": "SHIELD",
+        "value": 2,
+        "target": TARGET_SELF,
+        "handler_key": "add_shield",
+        "desc": "为自身添加2点护盾值",
+        # 拥有此技能的卡：48-全息坚果
+    },
     "SHIELD_6": {
         "category": "SHIELD",
         "value": 6,
@@ -127,6 +135,14 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
     },
 
     # ── HEAL 类（生命恢复） ───────────────────────────────────────
+    "HEAL_2": {
+        "category": "HEAL",
+        "value": 2,
+        "target": TARGET_SELF,
+        "handler_key": "heal_flat",
+        "desc": "恢复2点生命值",
+        # 拥有此技能的卡：18-白萝卜
+    },
     "HEAL_3": {
         "category": "HEAL",
         "value": 3,
@@ -134,6 +150,14 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "handler_key": "heal_flat",
         "desc": "恢复3点生命值",
         # 拥有此技能的卡：43-三叶草
+    },
+    "HEAL_4": {
+        "category": "HEAL",
+        "value": 4,
+        "target": TARGET_SELF,
+        "handler_key": "heal_flat",
+        "desc": "恢复4点生命值",
+        # 拥有此技能的卡：36-旋转菠萝
     },
     "HEAL_8": {
         "category": "HEAL",
@@ -279,7 +303,17 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "target": TARGET_SELF,
         "handler_key": "reduce_dmg_flat",
         "desc": "对对手每张出牌减少2点伤害（固定减伤，非百分比）",
-        # 拥有此技能的卡：44-熊果臼炮
+        # 拥有此技能的卡：9-寒冰射手、44-熊果臼炮
+    },
+
+    # ── SUPPORT_DMG 类（辅助增伤）─────────────────────────────────
+    "SUPPORT_DMG_MULTIPLIER": {
+        "category": "SUPPORT_DMG",
+        "value": 3,
+        "target": TARGET_SELF,
+        "handler_key": "support_dmg_multiplier",
+        "desc": "有辅助卡时，伤害×3",
+        # 拥有此技能的卡：30-莲小蓬
     },
 }
 

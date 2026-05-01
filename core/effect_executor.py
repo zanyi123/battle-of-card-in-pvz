@@ -614,18 +614,18 @@ def _exec_atk_to_heal_opponent(
     skill_data: dict[str, Any],
     logs: list[dict[str, Any]],
 ) -> None:
-    """ATK_TO_HEAL：将对方手牌攻击值之和转化为己方回复血量。
+    """ATK_TO_HEAL：将对方本回合出牌的攻击值之和转化为己方回复血量。
 
-    "对方手牌"包含对手 state["hands"][opponent_key] 中所有牌的 atk 值之和。
+    读取对方 played_cards 中所有牌的 atk 值求和，作为回血量。
+    若对方未出牌则不回血。
     """
     opponent_key = _get_opponent_key(player_key)
-    hands = state.get("hands", {})
-    opponent_hand: list[Any] = list(hands.get(opponent_key, []))
+    opponent_played: list[Any] = state.get("played_cards", {}).get(opponent_key, [])
 
-    total_atk = sum(int(_card_val(c, "atk", 0)) for c in opponent_hand)
+    total_atk = sum(int(_card_val(c, "atk", 0)) for c in opponent_played)
 
     if total_atk <= 0:
-        _log(logs, player_key, "atk_to_heal_zero", 0, "opponent_hand_atk_zero")
+        _log(logs, player_key, "atk_to_heal_zero", 0, "opponent_no_played_cards")
         return
 
     ps = _get_player_state(state, player_key)
@@ -636,7 +636,7 @@ def _exec_atk_to_heal_opponent(
     ps["hp"] = new_hp
 
     _log(logs, player_key, "atk_to_heal", actual_healed,
-         f"effect:ATK_TO_HEAL(opp_total_atk={total_atk})")
+         f"effect:ATK_TO_HEAL(opp_played_atk={total_atk})")
     _log(logs, player_key, "set_hp", new_hp, "after_atk_to_heal")
 
 

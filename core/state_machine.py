@@ -381,8 +381,24 @@ class GameStateMachine:
                 "text": message,
                 "time": _pg.time.get_ticks(),
             })
-            _log(f"[RemedyAI] AI 补救成功：{message}")
-            # play_card_remedy 内部已处理 _advance_to(ROUND_END)
+
+            # 检查 HP 是否真的回到 > 0（play_card_remedy 可能返回 True 但 HP 仍 ≤ 0）
+            p2_hp_after = int(state["players"]["P2"].get("hp", 0))
+            if p2_hp_after > 0:
+                _log(f"[RemedyAI] AI 补救成功：{message}")
+                # play_card_remedy 内部已处理 _advance_to(ROUND_END)
+            else:
+                _log(f"[RemedyAI] AI 补救不足（HP={p2_hp_after}），继续尝试或判定失败")
+                # 重置延迟计时器，给 AI 一次新的尝试机会
+                self._phase_entered_at_ms = pygame.time.get_ticks()
+                # 如果手牌已空，直接判负
+                p2_hand = state.get("hands", {}).get("P2", [])
+                if not p2_hand:
+                    _log(f"[RemedyAI] AI 补救不足且手牌为空，P1 胜利")
+                    state["winner"] = "P1"
+                    state["phase"] = "GAME_OVER"
+                    self.current_phase = TurnPhase.GAME_OVER
+                    state.setdefault("draw_anim", {})["active"] = False
         else:
             _log(f"[RemedyAI] AI 无卡可救，P1 胜利")
             state["winner"] = "P1"
