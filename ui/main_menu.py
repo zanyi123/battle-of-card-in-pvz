@@ -22,6 +22,7 @@ import pygame
 from ui.confirm_dialog import ConfirmDialog
 from ui.notification_panel import NotificationPanel
 from core.player_profile import get_player_name, get_display_id
+from utils.path_utils import get_resource_path
 
 if TYPE_CHECKING:
     from core.music_manager import MusicManager
@@ -51,9 +52,9 @@ _DBG_ACH  = ( 60,  60, 255, 110)   # 蓝
 _DBG_BOT  = (255, 200,  30, 110)   # 黄
 
 # ── 资源路径 ─────────────────────────────────────────────────────
-_IMG_ROOT   = Path("assets/images")
-_MUSIC_ROOT = Path("assets/music")
-_SFX_ROOT   = Path("assets/sfx")
+_IMG_ROOT   = get_resource_path("assets/images")
+_MUSIC_ROOT = get_resource_path("assets/music")
+_SFX_ROOT   = get_resource_path("assets/sfx")
 # 菜单音乐
 _MENU_MUSIC   = "menu/123. World Map.mp3"
 # SFX 音效
@@ -345,16 +346,20 @@ class MainMenu:
 
     def _load_background(self) -> None:
         """加载静态背景图 bg_menu.png。"""
-        bg_path = _IMG_ROOT / "bg_menu.png"
+        bg_path = get_resource_path("assets/images/bg_menu.png")
         if bg_path.exists():
             try:
                 original = pygame.image.load(str(bg_path)).convert()
                 self._bg_image = pygame.transform.smoothscale(
                     original, (self.screen_w, self.screen_h)
                 )
-            except pygame.error:
+                print(f"[MainMenu] 加载背景图: {bg_path}")
+                print(f"[MainMenu] 尺寸: {self.screen_w}x{self.screen_h}")
+            except pygame.error as e:
+                print(f"[MainMenu] 背景图加载失败: {e}")
                 self._bg_image = None
         else:
+            print(f"[MainMenu] 背景图不存在: {bg_path}")
             self._bg_image = None
 
     # ── 公共接口 ─────────────────────────────────────────────────
