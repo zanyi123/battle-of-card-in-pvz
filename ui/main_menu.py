@@ -677,10 +677,8 @@ class MainMenu:
         box_y = 10
         box_rect = pygame.Rect(box_x, box_y, box_w, box_h)
 
-        # 半透明深色背景
-        bg_surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
-        bg_surf.fill((20, 30, 45, 200))
-        self.screen.blit(bg_surf, (box_x, box_y))
+        # 实心深色背景（不透明，确保背景图不被覆盖）
+        pygame.draw.rect(self.screen, (20, 30, 45), box_rect)
         pygame.draw.rect(self.screen, (80, 100, 130), box_rect, width=1, border_radius=6)
 
         # 玩家名字（左对齐）
