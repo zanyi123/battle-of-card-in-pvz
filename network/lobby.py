@@ -175,18 +175,14 @@ class LobbyScreen:
             self._server_sock = None
 
     def _stop_tcp_listen(self) -> None:
-        """停止 TCP 监听。"""
+        """停止 TCP 监听（不关闭游戏连接 socket）。"""
         self._accepting = False
         if self._server_sock:
             try:
                 self._server_sock.close()
             except Exception:
                 pass
-        if self._client_sock:
-            try:
-                self._client_sock.close()
-            except Exception:
-                pass
+        # 注意：不关闭 _client_sock，GameClient/GameHost 还在用它
 
     # ── 网络连接 ──────────────────────────────────────────────
 

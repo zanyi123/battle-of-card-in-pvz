@@ -941,9 +941,8 @@ def main() -> None:
                         if lobby_screen._invite_result == "host" and lobby_screen._game_host:
                             run_online_host(screen, lobby_screen._game_host, music_manager, settings)
                         elif lobby_screen._invite_result == "client" and lobby_screen._game_client:
-                            # Client 端：lobby 已持有连接 socket
-                            client = GameClient(lobby_screen._client_sock)  # type: ignore
-                            run_online_client(screen, client, music_manager, settings)
+                            # Client 端：直接用 lobby 已创建的 GameClient
+                            run_online_client(screen, lobby_screen._game_client, music_manager, settings)
                     current_scene = Scene.MENU
             elif action == "start_ai":
                 current_scene = Scene.GAME
