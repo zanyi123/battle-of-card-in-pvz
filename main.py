@@ -40,6 +40,7 @@ from core.save_manager import (
 from ui.intro_screen import IntroScreen
 from ui.loading_screen import LoadingScreen, run_loading_screen
 from ui.main_menu import MainMenu, run_main_menu
+from ui.register_screen import ensure_registered
 from ui.renderer import Renderer
 
 
@@ -772,33 +773,91 @@ def save_and_show_settings(
 
 # ── 首次运行 ─────────────────────────────────────────────────
 
-def _ensure_first_run() -> None:
-    """首次运行时确保用户数据目录有默认配置文件。
+_GAME_VERSION = "1.0"  # 正式版，与之前测试版不兼容
 
-    打包模式下：将项目内嵌的默认 save_data.json / settings.json
-    复制到用户数据目录（仅当目标文件不存在时）。
-    开发模式下：无需操作（文件已就位）。
+
+def _ensure_first_run() -> None:
+    """正式版首次运行 / 版本升级时的数据初始化。
+
+    策略：
+      正式版(v1.0)与测试版(v0.x)不兼容，数据不继承。
+      - 已注册用户 → 保留账号(player_profile.json)，重置成就+通知
+      - 未注册用户 → 全新开始，不保留任何旧数据
+      - 版本标记用 .game_version 文件判断
     """
     user_dir = get_user_data_dir()
-    marker = user_dir / ".initialized"
+    version_marker = user_dir / ".game_version"
 
-    if marker.exists():
-        return
+    # ── 读取当前版本标记 ─────────────────────────────────────
+    current_version = ""
+    if version_marker.exists():
+        try:
+            current_version = version_marker.read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
 
+    is_new_version = current_version != _GAME_VERSION
+    if not is_new_version:
+        return  # 同版本，无需处理
+
+    log_event(f"[FirstRun] 版本切换: '{current_version}' → '{_GAME_VERSION}'")
+
+    # ── 检测是否已注册（保留账号）────────────────────────────
+    profile_path = user_dir / "player_profile.json"
+    has_profile = profile_path.exists()
+    saved_profile: dict[str, Any] = {}
+    if has_profile:
+        try:
+            saved_profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            has_profile = bool(saved_profile.get("player_id") and saved_profile.get("player_name"))
+            log_event(f"[FirstRun] 发现已注册用户: {saved_profile.get('player_name', '?')}")
+        except Exception:
+            has_profile = False
+
+    # ── 清空旧数据（正式版不继承测试版）──────────────────────
+    for fname in ("save_data.json", "settings.json"):
+        old = user_dir / fname
+        if old.exists():
+            try:
+                old.unlink()
+                log_event(f"[FirstRun] 清除旧文件: {fname}")
+            except OSError:
+                pass
+
+    # ── 复制默认配置（成就全未解锁、通知全未读）──────────────
     for filename in ("save_data.json", "settings.json"):
-        src = get_resource_path(f"config/{filename}")
+        src = get_resource_path(f"config/default_{filename}")
         dst = user_dir / filename
-        if not dst.exists() and src.exists():
+        if src.exists():
             try:
                 shutil.copy2(str(src), str(dst))
             except OSError as exc:
                 log_event(f"[FirstRun] 复制 {filename} 失败: {exc}", "error")
 
-    # 写入标记文件
+    # ── 恢复已注册用户的账号 ─────────────────────────────────
+    if has_profile and saved_profile:
+        try:
+            profile_path.write_text(
+                json.dumps(saved_profile, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            log_event(f"[FirstRun] 已恢复账号: {saved_profile.get('player_name')} ({saved_profile.get('player_id', '')[:8]})")
+        except OSError as exc:
+            log_event(f"[FirstRun] 恢复账号失败: {exc}", "error")
+    else:
+        # 未注册 → 删除残留 profile（如果有）
+        if profile_path.exists():
+            try:
+                profile_path.unlink()
+            except OSError:
+                pass
+        log_event("[FirstRun] 未检测到注册账号，首次启动将引导注册")
+
+    # ── 写入版本标记 ─────────────────────────────────────────
     try:
-        marker.write_text("initialized", encoding="utf-8")
+        version_marker.write_text(_GAME_VERSION, encoding="utf-8")
     except OSError as exc:
-        log_event(f"[FirstRun] 写入标记文件失败: {exc}", "error")
+        log_event(f"[FirstRun] 写入版本标记失败: {exc}", "error")
 
 
 # ── 主入口 ───────────────────────────────────────────────────
@@ -854,6 +913,11 @@ def main() -> None:
             current_scene = Scene.MENU
 
         elif current_scene == Scene.MENU:
+            # ── 确保玩家已注册 ─────────────────────────────
+            if not ensure_registered(screen, SCREEN_SIZE):
+                pygame.quit()
+                return
+
             # ── 主菜单 ───────────────────────────────────────
             action, selected_world = run_main_menu(screen, music_manager, settings)
 
@@ -862,6 +926,25 @@ def main() -> None:
                 return
             elif action == "settings":
                 current_scene = Scene.SETTINGS
+            elif action == "online":
+                from network.lobby import run_lobby
+                from network.game_host import GameHost
+                from network.game_client import GameClient
+                from network.online_game import run_online_host, run_online_client
+
+                online_result = run_lobby(screen, SCREEN_SIZE, music_manager, settings)
+                if online_result == "start":
+                    # lobby 会把角色信息存在全局变量里
+                    import network.lobby as _lobby_mod
+                    lobby_screen = getattr(_lobby_mod, '_last_lobby', None)
+                    if lobby_screen is not None:
+                        if lobby_screen._invite_result == "host" and lobby_screen._game_host:
+                            run_online_host(screen, lobby_screen._game_host, music_manager, settings)
+                        elif lobby_screen._invite_result == "client" and lobby_screen._game_client:
+                            # Client 端：lobby 已持有连接 socket
+                            client = GameClient(lobby_screen._client_sock)  # type: ignore
+                            run_online_client(screen, client, music_manager, settings)
+                    current_scene = Scene.MENU
             elif action == "start_ai":
                 current_scene = Scene.GAME
 

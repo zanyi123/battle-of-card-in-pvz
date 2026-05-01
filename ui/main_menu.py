@@ -21,6 +21,7 @@ import pygame
 
 from ui.confirm_dialog import ConfirmDialog
 from ui.notification_panel import NotificationPanel
+from core.player_profile import get_player_name, get_display_id
 
 if TYPE_CHECKING:
     from core.music_manager import MusicManager
@@ -267,6 +268,10 @@ class MainMenu:
         self._font_cache: dict[tuple[int, bool], pygame.font.Font] = {}
         self._cjk_font_path = Path("assets/fonts/SourceHanSansSC-Regular.otf")
         self._buttons: list[_Button] = self._build_buttons()
+        # ── 玩家信息框（右上角）
+        self._profile_name = get_player_name()
+        self._profile_id = get_display_id()
+
         self._popup = _RulesPopup(self.screen_w, self.screen_h, self.get_font)
         self._confirm_dialog = ConfirmDialog(
             screen=screen,
@@ -395,6 +400,8 @@ class MainMenu:
                         return ("quit", None)
                     elif action == "settings":
                         return ("settings", None)
+                    elif action == "online":
+                        return ("online", None)
 
             if self._confirm_dialog.visible:
                 self._confirm_dialog.update(dt)
@@ -471,9 +478,9 @@ class MainMenu:
         buttons.append(_Button(
             label="二人对战",
             rect=pvp_rect,
-            action="",
-            disabled=True,
-            note="开发中",
+            action="online",
+            disabled=False,
+            note="",
             debug_color=_DBG_PVP,
         ))
 
@@ -563,6 +570,8 @@ class MainMenu:
                 if btn.action == "achievement":
                     self._show_achievement_popup()
                     return ""
+                if btn.action == "online":
+                    return "online"
                 # settings action 返回给外层处理
                 return btn.action
             return btn.action
@@ -589,15 +598,16 @@ class MainMenu:
         if DEBUG_MODE:
             self._draw_debug_overlay()
 
-        # ── Step 3: 标题 + 按钮 ──────────────────────────────────────
+        # ── Step 3: 标题 + 按钮 + 玩家信息 ────────────────────────────
         self._draw_title()
+        self._draw_player_info()
         for btn in self._buttons:
             self._draw_button(btn)
 
         # 版本号
         ver_font = self.get_font(12)
         ver_surf = ver_font.render(
-            "v0.2 alpha  |  PVZ Plant Card Game", True, (100, 110, 125)
+            "v1.0 release  |  PVZ Plant Card Game", True, (100, 110, 125)
         )
         self.screen.blit(
             ver_surf,
@@ -655,6 +665,33 @@ class MainMenu:
                 title="🏆 成就",
                 body=f"加载成就数据失败: {exc}",
             )
+
+    def _draw_player_info(self) -> None:
+        """在菜单右上角绘制玩家信息框（名字 + ID）。"""
+        if not self._profile_name:
+            return
+
+        # 信息框尺寸和位置（右上角）
+        box_w, box_h = 200, 52
+        box_x = self.screen_w - box_w - 12
+        box_y = 10
+        box_rect = pygame.Rect(box_x, box_y, box_w, box_h)
+
+        # 半透明深色背景
+        bg_surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+        bg_surf.fill((20, 30, 45, 200))
+        self.screen.blit(bg_surf, (box_x, box_y))
+        pygame.draw.rect(self.screen, (80, 100, 130), box_rect, width=1, border_radius=6)
+
+        # 玩家名字（左对齐）
+        name_font = self.get_font(16, bold=True)
+        name_surf = name_font.render(self._profile_name, True, (255, 240, 140))
+        self.screen.blit(name_surf, (box_x + 10, box_y + 6))
+
+        # 玩家 ID（缩小显示）
+        id_font = self.get_font(12)
+        id_surf = id_font.render(f"ID: {self._profile_id}", True, (140, 155, 175))
+        self.screen.blit(id_surf, (box_x + 10, box_y + 30))
 
     def _draw_title(self) -> None:
         title_font = self.get_font(42, bold=True)

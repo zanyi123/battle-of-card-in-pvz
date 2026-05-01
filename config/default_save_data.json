@@ -1,0 +1,14 @@
+{
+  "achievements": {
+    "first_win": false,
+    "endurance_20": false,
+    "card_master": false,
+    "desperate_survival": false,
+    "speed_run_10": false
+  },
+  "stats": {
+    "used_card_ids": [],
+    "current_game_rounds": 0,
+    "remedy_flipped": false
+  }
+}

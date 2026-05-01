@@ -118,7 +118,18 @@ def _collect_hiddenimports() -> list[str]:
         "ui.notification_panel",
         "ui.floating_text",
         "ui.card_renderer",
+        "ui.register_screen",
         "utils.path_utils",
+        # ── 联机模块 ──────────────────────────────────────
+        "network",
+        "network.protocol",
+        "network.lan_discovery",
+        "network.lobby",
+        "network.game_host",
+        "network.game_client",
+        "network.online_game",
+        # ── 玩家档案 ──────────────────────────────────────
+        "core.player_profile",
     ]
 
 

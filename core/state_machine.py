@@ -91,6 +91,11 @@ class GameStateMachine:
         # 先手玩家（"P1" 或 "P2"），控制每回合的出牌顺序
         self.first_player: str = "P1"
 
+        # ── 联机模式支持 ──────────────────────────────────────────
+        self.is_online: bool = False           # True=联机模式，False=AI模式
+        self._online_actions: list[dict[str, Any]] = []  # 网络接收的 P2 操作队列
+        self._waiting_for_online: bool = False           # 是否正在等待远端玩家操作
+
     def bind_runtime_state(self, state: dict[str, Any]) -> None:
         """绑定运行时状态字典（所有游戏数据存放于此）。"""
         self._runtime_state = state
@@ -182,8 +187,18 @@ class GameStateMachine:
 
     # ── 阶段处理器 ───────────────────────────────────────────────
 
+    def feed_online_action(self, action: dict[str, Any]) -> None:
+        """【联机模式】Host 接收 Client 的操作，加入待处理队列。"""
+        self._online_actions.append(action)
+        self._waiting_for_online = False
+
     def _on_play_p2(self) -> None:
-        """PLAY_P2 阶段：AI 延迟 3 秒后自动出牌。"""
+        """PLAY_P2 阶段：AI 模式延迟出牌 / 联机模式等待远端操作。"""
+        # ── 联机模式：等待网络操作 ──────────────────────────────────
+        if self.is_online:
+            return self._on_play_p2_online()
+
+        # ── AI 模式（原有逻辑不变）──────────────────────────────────
         now_ms = pygame.time.get_ticks()
 
         # 首帧记录 ai_turn_start
@@ -240,6 +255,79 @@ class GameStateMachine:
 
         # 根据 first_player 决定下一阶段
         self._advance_after_player("P2")
+
+    def _on_play_p2_online(self) -> None:
+        """PLAY_P2 阶段（联机模式）：等待 Client 发送操作。"""
+        if not self._online_actions:
+            self._waiting_for_online = True
+            return  # 继续等待，不推进
+
+        action = self._online_actions.pop(0)
+        state = self._runtime_state
+        action_type = action.get("action", "")
+
+        _log(f"[Online] 收到 P2 操作: {action_type}")
+
+        # ── 🔇 P2 被沉默：跳过出牌 ──────────────────────────────────
+        temp = state.get("temp", {})
+        if temp.get("P2_silenced"):
+            _log(f"[Round {self._round_number}] P2(远端)被沉默，跳过出牌")
+            self._advance_after_player("P2")
+            return
+
+        if action_type == "finish_turn":
+            # P2 结束出牌（可能没出牌直接跳过）
+            self._advance_after_player("P2")
+            return
+
+        if action_type == "play_card":
+            # P2 出牌：根据 card_id 找到手牌中的卡
+            card_id = int(action.get("card_id", -1))
+            p2_hand = state.setdefault("hands", {}).setdefault("P2", [])
+            card = None
+            for c in p2_hand:
+                if int(getattr(c, "id", -1)) == card_id:
+                    card = c
+                    break
+            if card is None:
+                _log(f"[Online] P2 卡牌 ID={card_id} 不在手牌中，跳过")
+                return
+
+            # 使用标准出牌逻辑（预出牌）
+            if self.play_card(card, "P2"):
+                _log(f"[Online] P2 出牌: {getattr(card, 'name', '?')}")
+
+        elif action_type == "commit_and_finish":
+            # P2 确认所有出牌并结束
+            self._finish_player_turn_online("P2")
+            return
+
+        elif action_type == "finish_turn_with_commit":
+            # 先 commit pending，再 finish
+            pending = state.get("pending_play", {}).get("P2", [])
+            if pending:
+                self.commit_pending_play("P2")
+            self._advance_after_player("P2")
+            return
+
+    def _finish_player_turn_online(self, player: str) -> None:
+        """联机模式下远端玩家结束出牌。"""
+        if self._runtime_state is None:
+            return
+
+        # commit pending
+        pending = self._runtime_state.get("pending_play", {}).get(player, [])
+        if pending:
+            self.commit_pending_play(player)
+
+        played = self._runtime_state.get("played_cards", {}).get(player, [])
+        if played:
+            names = "+".join(getattr(c, "name", "?") for c in played)
+            _log(f"[Round {self._round_number}] {player}(远端)出牌: {names}")
+        else:
+            _log(f"[Round {self._round_number}] {player}(远端)跳过")
+
+        self._advance_after_player(player)
 
     def _on_resolve(self) -> None:
         """RESOLVE 阶段：调用 ResolutionEngine 结算伤害，立即推进。
@@ -357,17 +445,14 @@ class GameStateMachine:
         # 推进由 input_router 的治疗卡出牌逻辑 或 超时逻辑 负责。
 
     def _on_remedy_ai(self) -> None:
-        """REMEDY_AI 阶段：P2 濒死，AI 自动尝试补救。
-
-        流程：
-        1. 等待 REMEDY_AI_DELAY_MS（2秒延迟，增加紧张感）
-        2. AI 从手牌中寻找允许的补救卡
-        3. 若找到 → 自动出牌，成功回血则进入 ROUND_END
-        4. 若无卡可救 → 判 P1 胜利，进入 GAME_OVER
-        """
+        """REMEDY_AI 阶段：P2 濒死，AI/远端玩家尝试补救。"""
         state = self._runtime_state
         now_ms = pygame.time.get_ticks()
 
+        if self.is_online:
+            return self._on_remedy_online()
+
+        # ── AI 模式（原有逻辑）──────────────────────────────────────
         # 延迟等待（给玩家看到"对方尝试自救中"提示的时间）
         if now_ms - self._phase_entered_at_ms < self.REMEDY_AI_DELAY_MS:
             return
@@ -382,16 +467,13 @@ class GameStateMachine:
                 "time": _pg.time.get_ticks(),
             })
 
-            # 检查 HP 是否真的回到 > 0（play_card_remedy 可能返回 True 但 HP 仍 ≤ 0）
+            # 检查 HP 是否真的回到 > 0
             p2_hp_after = int(state["players"]["P2"].get("hp", 0))
             if p2_hp_after > 0:
                 _log(f"[RemedyAI] AI 补救成功：{message}")
-                # play_card_remedy 内部已处理 _advance_to(ROUND_END)
             else:
                 _log(f"[RemedyAI] AI 补救不足（HP={p2_hp_after}），继续尝试或判定失败")
-                # 重置延迟计时器，给 AI 一次新的尝试机会
                 self._phase_entered_at_ms = pygame.time.get_ticks()
-                # 如果手牌已空，直接判负
                 p2_hand = state.get("hands", {}).get("P2", [])
                 if not p2_hand:
                     _log(f"[RemedyAI] AI 补救不足且手牌为空，P1 胜利")
@@ -401,6 +483,49 @@ class GameStateMachine:
                     state.setdefault("draw_anim", {})["active"] = False
         else:
             _log(f"[RemedyAI] AI 无卡可救，P1 胜利")
+            state["winner"] = "P1"
+            state["phase"] = "GAME_OVER"
+            self.current_phase = TurnPhase.GAME_OVER
+            state.setdefault("draw_anim", {})["active"] = False
+
+    def _on_remedy_online(self) -> None:
+        """REMEDY_AI 阶段（联机模式）：P2 濒死，等待远端玩家补救。"""
+        state = self._runtime_state
+
+        # 超时检测（30秒）
+        now_ms = pygame.time.get_ticks()
+        if now_ms - self._phase_entered_at_ms >= self.REMEDY_DELAY_MS:
+            _log("[RemedyOnline] P2(远端)补救超时，P1 胜利")
+            state["winner"] = "P1"
+            state["phase"] = "GAME_OVER"
+            self.current_phase = TurnPhase.GAME_OVER
+            state.setdefault("draw_anim", {})["active"] = False
+            return
+
+        if not self._online_actions:
+            return  # 继续等待
+
+        action = self._online_actions.pop(0)
+        action_type = action.get("action", "")
+
+        if action_type == "remedy_play_card":
+            card_id = int(action.get("card_id", -1))
+            p2_hand = state.get("hands", {}).get("P2", [])
+            card = None
+            for c in p2_hand:
+                if int(getattr(c, "id", -1)) == card_id:
+                    card = c
+                    break
+            if card is None:
+                _log(f"[RemedyOnline] P2 卡牌 ID={card_id} 不在手牌中")
+                return
+
+            success, msg = self.play_card_remedy(card, "P2")
+            _log(f"[RemedyOnline] P2(远端)补救: {msg}")
+
+        elif action_type == "remedy_skip":
+            # P2 放弃补救
+            _log("[RemedyOnline] P2(远端)放弃补救")
             state["winner"] = "P1"
             state["phase"] = "GAME_OVER"
             self.current_phase = TurnPhase.GAME_OVER
