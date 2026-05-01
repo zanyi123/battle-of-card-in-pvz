@@ -108,8 +108,7 @@ class RegisterScreen:
                 self._done_action = "use"
                 self._done = True
             elif self._btn_re.collidepoint(event.pos):
-                self._input_text = ""  # 清空输入框
-            self._input_active = self._input_rect.collidepoint(event.pos)
+                self._input_text = ""  # 清空输入框，准备输入新名字
 
         elif event.type == pygame.KEYDOWN:
             if not self._input_active:

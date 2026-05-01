@@ -42,6 +42,7 @@ from ui.loading_screen import LoadingScreen, run_loading_screen
 from ui.main_menu import MainMenu, run_main_menu
 from ui.register_screen import ensure_registered
 from ui.renderer import Renderer
+from core.player_profile import get_player_name
 
 
 # ── 常量 ─────────────────────────────────────────────────────
