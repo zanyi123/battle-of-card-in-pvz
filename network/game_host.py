@@ -47,6 +47,7 @@ class GameHost:
             try:
                 chunk = self._sock.recv(8192)
                 if not chunk:
+                    print("[GameHost] Client 断开连接")
                     break
                 buf += chunk
                 while b"\n" in buf:
@@ -60,7 +61,16 @@ class GameHost:
             except BlockingIOError:
                 import time
                 time.sleep(0.016)
-            except Exception:
+            except ConnectionResetError:
+                print("[GameHost] 连接被 Client 重置")
+                break
+            except OSError as e:
+                if self._running:
+                    print(f"[GameHost] 接收异常: {e}")
+                break
+            except Exception as e:
+                if self._running:
+                    print(f"[GameHost] 未知异常: {e}")
                 break
 
     def poll_actions(self) -> list[dict[str, Any]]:
@@ -79,12 +89,14 @@ class GameHost:
 
         只发送渲染所需的数据，过滤不可序列化的对象。
         """
-        serializable = self._serialize_state(state)
-        msg = make_message(GAME_STATE, serializable)
         try:
+            serializable = self._serialize_state(state)
+            msg = make_message(GAME_STATE, serializable)
             self._sock.sendall(msg.encode("utf-8"))
-        except Exception:
-            pass
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[GameHost] send_state 失败: {e}")
 
     def _serialize_state(self, state: dict[str, Any]) -> dict[str, Any]:
         """将 state dict 序列化为可 JSON 化的结构。"""
@@ -92,48 +104,71 @@ class GameHost:
 
         result: dict[str, Any] = {}
 
-        # 基础字段
-        result["phase"] = str(getattr(state.get("phase"), "name", state.get("phase", "")))
+        try:
+            # 基础字段
+            phase_val = state.get("phase")
+            if hasattr(phase_val, "name"):
+                result["phase"] = str(phase_val.name)
+            else:
+                result["phase"] = str(phase_val) if phase_val else ""
+        except Exception:
+            result["phase"] = ""
+
         result["time_left"] = state.get("time_left", 90)
         result["winner"] = state.get("winner")
         result["round_count"] = state.get("round_count", 0)
 
-        # 玩家数据
-        players = state.get("players", {})
-        result["players"] = {}
-        for key in ("P1", "P2"):
-            p = players.get(key, {})
-            result["players"][key] = {
-                "hp": p.get("hp", 10),
-                "max_hp": p.get("max_hp", 10),
-                "max_mana": p.get("max_mana", 5),
-                "current_mana": p.get("current_mana", 5),
+        try:
+            # 玩家数据
+            players = state.get("players", {})
+            result["players"] = {}
+            for key in ("P1", "P2"):
+                p = players.get(key, {})
+                result["players"][key] = {
+                    "hp": p.get("hp", 10),
+                    "max_hp": p.get("max_hp", 10),
+                    "max_mana": p.get("max_mana", 5),
+                    "current_mana": p.get("current_mana", 5),
+                }
+        except Exception:
+            result["players"] = {"P1": {"hp": 10}, "P2": {"hp": 10}}
+
+        try:
+            # 手牌 — 只发送 Client（P2）的完整信息，Host（P1）只发数量
+            hands = state.get("hands", {})
+            result["hands"] = {
+                "P1": _serialize_card_list(hands.get("P1", []), hide=True),   # 隐藏对手手牌
+                "P2": _serialize_card_list(hands.get("P2", [])),              # 自己手牌完整
             }
+        except Exception:
+            result["hands"] = {"P1": [], "P2": []}
 
-        # 手牌 — 只发送 Client（P2）的完整信息，Host（P1）只发数量
-        hands = state.get("hands", {})
-        result["hands"] = {
-            "P1": _serialize_card_list(hands.get("P1", []), hide=True),   # 隐藏对手手牌
-            "P2": _serialize_card_list(hands.get("P2", [])),              # 自己手牌完整
-        }
+        try:
+            # 出牌
+            played = state.get("played_cards", {})
+            result["played_cards"] = {
+                "P1": _serialize_card_list(played.get("P1", [])),
+                "P2": _serialize_card_list(played.get("P2", [])),
+            }
+        except Exception:
+            result["played_cards"] = {"P1": [], "P2": []}
 
-        # 出牌
-        played = state.get("played_cards", {})
-        result["played_cards"] = {
-            "P1": _serialize_card_list(played.get("P1", [])),
-            "P2": _serialize_card_list(played.get("P2", [])),
-        }
-
-        # 预出牌
-        pending = state.get("pending_play", {})
-        result["pending_play"] = {
-            "P1": _serialize_card_list(pending.get("P1", [])),
-            "P2": _serialize_card_list(pending.get("P2", [])),
-        }
+        try:
+            # 预出牌
+            pending = state.get("pending_play", {})
+            result["pending_play"] = {
+                "P1": _serialize_card_list(pending.get("P1", [])),
+                "P2": _serialize_card_list(pending.get("P2", [])),
+            }
+        except Exception:
+            result["pending_play"] = {"P1": [], "P2": []}
 
         # 牌堆数量
-        deck = state.get("deck")
-        result["deck_size"] = len(deck.cards) if hasattr(deck, "cards") else state.get("deck_size", 0)
+        try:
+            deck = state.get("deck")
+            result["deck_size"] = len(deck.cards) if hasattr(deck, "cards") else state.get("deck_size", 0)
+        except Exception:
+            result["deck_size"] = 0
 
         # Toasts
         result["toasts"] = state.get("toasts", [])
@@ -142,8 +177,11 @@ class GameHost:
         result["floating_texts"] = state.get("floating_texts", [])
 
         # 临时状态（沉默等）
-        temp = state.get("temp", {})
-        result["temp"] = {k: v for k, v in temp.items() if isinstance(v, (str, int, float, bool))}
+        try:
+            temp = state.get("temp", {})
+            result["temp"] = {k: v for k, v in temp.items() if isinstance(v, (str, int, float, bool))}
+        except Exception:
+            result["temp"] = {}
 
         return result
 

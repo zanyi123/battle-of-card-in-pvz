@@ -1561,7 +1561,11 @@ class Renderer:
             card_id = card.get("id", card_index)
             faction = card.get("faction", "")
             if image_file:
-                img_path = get_resource_path("assets/cards") / image_file
+                # 支持 "images/plants/XX.png" 和 "xx.png" 两种路径
+                if "/" in image_file:
+                    img_path = get_resource_path("assets") / image_file
+                else:
+                    img_path = get_resource_path("assets/cards") / image_file
                 if img_path.exists():
                     return pygame.image.load(str(img_path)).convert_alpha()
             # 降级通过 card_id

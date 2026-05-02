@@ -144,6 +144,26 @@ def run_online_host(
     if music_manager is not None:
         music_manager.update_settings(settings)
 
+    # ── 立即发送 "等待" 状态给 Client，防止超时断开 ─────────
+    try:
+        host.send_state({
+            "phase": "WAITING",
+            "time_left": 999,
+            "winner": None,
+            "round_count": 0,
+            "players": {"P1": {"hp": 10, "max_hp": 10}, "P2": {"hp": 10, "max_hp": 10}},
+            "hands": {"P1": [], "P2": []},
+            "played_cards": {"P1": [], "P2": []},
+            "pending_play": {"P1": [], "P2": []},
+            "deck_size": 0,
+            "toasts": [],
+            "floating_texts": [],
+            "temp": {},
+        })
+        log_event("[OnlineHost] 已发送 WAITING 状态给 Client")
+    except Exception as e:
+        log_event(f"[OnlineHost] 发送等待状态失败: {e}", "error")
+
     # ── 先手选择 ─────────────────────────────────────────────
     from ui.order_dialog import OrderDialog
     order_dialog = OrderDialog(screen, SCREEN_SIZE)
@@ -153,6 +173,7 @@ def run_online_host(
     pygame.display.flip()
 
     order_clock = pygame.time.Clock()
+    heartbeat_counter = 0
     while order_dialog.visible:
         dt = order_clock.tick(FPS) / 1000.0
         order_dialog.update(dt)
@@ -163,6 +184,27 @@ def run_online_host(
             order_dialog.handle_event(event)
         order_dialog.draw(screen)
         pygame.display.flip()
+
+        # 心跳：每 2 秒发送一次 WAITING 状态，防止 Client 超时
+        heartbeat_counter += 1
+        if heartbeat_counter % 120 == 0:  # 120帧 = 2秒
+            try:
+                host.send_state({
+                    "phase": "WAITING",
+                    "time_left": 999,
+                    "winner": None,
+                    "round_count": 0,
+                    "players": {"P1": {"hp": 10, "max_hp": 10}, "P2": {"hp": 10, "max_hp": 10}},
+                    "hands": {"P1": [], "P2": []},
+                    "played_cards": {"P1": [], "P2": []},
+                    "pending_play": {"P1": [], "P2": []},
+                    "deck_size": 0,
+                    "toasts": [],
+                    "floating_texts": [],
+                    "temp": {},
+                })
+            except Exception:
+                pass
 
     first_player = order_dialog.result or "P1"
     state_machine.first_player = first_player
@@ -417,7 +459,8 @@ def run_online_client(
 
     remote_state = client.get_latest_state()
     timeout_counter = 0
-    while not remote_state and timeout_counter < 1800:  # 最多等 30 秒
+    MAX_WAIT_FRAMES = 3600  # 60 秒超时（原来 30 秒不够）
+    while not remote_state and timeout_counter < MAX_WAIT_FRAMES:
         dt = clock.tick(FPS) / 1000.0
 
         # 显示等待画面
@@ -425,22 +468,70 @@ def run_online_client(
             if event.type == pygame.QUIT:
                 client.close()
                 return
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                log_event("[OnlineClient] 用户取消等待")
+                client.close()
+                return
 
         screen.fill((26, 43, 58))
         dots = "." * ((timeout_counter // 30) % 4)
         wait_surf = wait_font.render(f"等待 Host 开始游戏{dots}", True, (190, 210, 230))
         screen.blit(wait_surf, wait_surf.get_rect(center=(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2)))
-        hint_surf = wait_font.render("（请在 Host 窗口完成先手选择）", True, (130, 145, 165))
+        hint_surf = wait_font.render("(请在 Host 窗口完成先手选择)", True, (130, 145, 165))
         screen.blit(hint_surf, hint_surf.get_rect(center=(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2 + 40)))
+        # 显示已等待秒数
+        elapsed_s = timeout_counter // 60
+        time_surf = wait_font.render(f"已等待 {elapsed_s}s / 60s", True, (100, 120, 140))
+        screen.blit(time_surf, time_surf.get_rect(center=(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2 + 80)))
         pygame.display.flip()
 
         remote_state = client.get_latest_state()
         timeout_counter += 1
 
     if not remote_state:
-        log_event("[OnlineClient] 等待状态超时", "error")
+        log_event("[OnlineClient] 等待状态超时（60秒）", "error")
+        # 显示超时提示而不是直接关闭
+        screen.fill((26, 43, 58))
+        err_surf = wait_font.render("等待超时，连接已断开", True, (255, 100, 100))
+        screen.blit(err_surf, err_surf.get_rect(center=(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2)))
+        hint2 = wait_font.render("(3秒后返回主菜单...)", True, (130, 145, 165))
+        screen.blit(hint2, hint2.get_rect(center=(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2 + 40)))
+        pygame.display.flip()
+        pygame.time.wait(3000)
         client.close()
         return
+
+    # 如果收到 WAITING 状态，继续等待真正的游戏状态
+    if remote_state.get("phase") == "WAITING":
+        log_event("[OnlineClient] 收到 WAITING 状态，继续等待游戏开始...")
+        remote_state = None
+        timeout_counter = 0
+        while not remote_state and timeout_counter < MAX_WAIT_FRAMES:
+            dt = clock.tick(FPS) / 1000.0
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    client.close()
+                    return
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    client.close()
+                    return
+
+            screen.fill((26, 43, 58))
+            dots = "." * ((timeout_counter // 30) % 4)
+            wait_surf = wait_font.render(f"Host 正在选择先手{dots}", True, (190, 210, 230))
+            screen.blit(wait_surf, wait_surf.get_rect(center=(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2)))
+            pygame.display.flip()
+
+            raw = client.get_latest_state()
+            if raw and raw.get("phase") not in ("WAITING", None, ""):
+                remote_state = raw
+                break
+            timeout_counter += 1
+
+        if not remote_state:
+            log_event("[OnlineClient] 等待游戏状态超时", "error")
+            client.close()
+            return
 
     log_event("[OnlineClient] 收到初始状态，开始游戏")
 
@@ -450,10 +541,24 @@ def run_online_client(
 
         # 获取最新状态
         remote_state = client.get_latest_state()
-        if not remote_state:
-            # 连接断开
-            log_event("[OnlineClient] 与 Host 断开连接", "error")
-            break
+        if remote_state is None:
+            # 可能是第一帧还没收到（区别于连接断开）
+            remote_state = {}
+
+        # 检测连接断开：连续多次空状态 → 断线
+        if not remote_state or not remote_state.get("phase"):
+            client._disconnect_count = getattr(client, '_disconnect_count', 0) + 1
+            if client._disconnect_count > 300:  # 5秒无数据
+                log_event("[OnlineClient] 与 Host 断开连接（5秒无数据）", "error")
+                screen.fill((26, 43, 58))
+                err_font = wait_font if wait_font else pygame.font.SysFont("simhei", 22)
+                err_surf = err_font.render("与 Host 断开连接", True, (255, 100, 100))
+                screen.blit(err_surf, err_surf.get_rect(center=(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2)))
+                pygame.display.flip()
+                pygame.time.wait(2000)
+                break
+        else:
+            client._disconnect_count = 0
 
         phase_str = str(remote_state.get("phase", ""))
         is_game_over = phase_str == "GAME_OVER" or remote_state.get("winner") is not None

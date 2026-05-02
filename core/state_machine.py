@@ -233,7 +233,7 @@ class GameStateMachine:
             _log(f"[Round {self._round_number}] AI 出牌: {names}（花费 {cost_spent}）")
             # ── 🔥 AI 出牌：只触发主卡即时效果（辅助卡效果由 _apply_supports 触发）──
             _DELAYED_EFFECT_IDS = frozenset({
-                "COUNTER_ATK_ZERO", "COUNTER_DMG_X3", "NO_COUNTER_DMG_X2",
+                "COUNTER_ATK_ZERO", "COUNTER_DMG_X3", "NO_COUNTER_DMG_X2", "DMG_BUFF_2X_COUNTER",
             })
             _DELAYED_CARD_IDS = frozenset({30})
             for c in chosen:
@@ -621,7 +621,7 @@ class GameStateMachine:
             eid = str(getattr(card, "effect_id", "") or "")
             # ── 克制类效果跳过：延迟到 RESOLVE 阶段执行（需要对手阵营信息）──
             _DELAYED_EFFECT_IDS = frozenset({
-                "COUNTER_ATK_ZERO", "COUNTER_DMG_X3", "NO_COUNTER_DMG_X2",
+                "COUNTER_ATK_ZERO", "COUNTER_DMG_X3", "NO_COUNTER_DMG_X2", "DMG_BUFF_2X_COUNTER",
             })
             card_id = int(getattr(card, "id", -1))
             # 莲小蓬(ID=30)辅助增伤也延迟（需要知道同回合是否有辅助卡）
@@ -1105,6 +1105,20 @@ class GameStateMachine:
         if not isinstance(deck, Deck):
             deck = Deck(cards=[])
             state["deck"] = deck
+
+        # ── BLOCK_NEXT_DRAW：困窘检查 ───────────────────────────────
+        # 如果对手被困窘（缠绕水草），则跳过补牌
+        control_effects = state.get("control_effects", {})
+        if control_effects.get("P2_block_next_draw"):
+            _log(f"[Round {self._round_number}] P2 被困窘，跳过补牌")
+            # 清除困窘标志
+            control_effects.pop("P2_block_next_draw", None)
+            return
+        if control_effects.get("P1_block_next_draw"):
+            _log(f"[Round {self._round_number}] P1 被困窘，跳过补牌")
+            # 清除困窘标志
+            control_effects.pop("P1_block_next_draw", None)
+            return
 
         # 先抽取所有需要补的牌（暂存）
         p1_draw: list[Any] = []

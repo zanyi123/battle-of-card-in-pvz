@@ -125,6 +125,7 @@ class LobbyScreen:
         self._listen_thread: threading.Thread | None = None
         self._client_sock: socket.socket | None = None
         self._accepting: bool = False
+        self._my_listen_port: int = 0       # 本实例监听的端口，连接时跳过防止自连
 
         # 邀请回调结果
         self._invite_result: str = ""  # "" / "host" / "client"
@@ -158,21 +159,44 @@ class LobbyScreen:
         self._stop_tcp_listen()
 
     def _start_tcp_listen(self) -> None:
-        """启动 TCP 监听线程，等待被邀请。"""
+        """启动 TCP 监听线程，等待被邀请。
+
+        双开兼容：
+          - 不使用 SO_REUSEADDR，防止两个实例绑定同一端口导致自连。
+          - 如果默认端口被占，自动尝试 +1 ~ +9 端口。
+          - 每次尝试创建新 socket，避免地址复用。
+        """
         self._accepting = True
-        self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            self._server_sock.bind(("", LAN_PORT))
-            self._server_sock.listen(1)
-            self._server_sock.settimeout(1.0)
-            self._listen_thread = threading.Thread(target=self._accept_loop, daemon=True)
-            self._listen_thread.start()
-            log_event(f"[Lobby] TCP监听启动: {LAN_PORT}")
-        except OSError as e:
-            log_event(f"[Lobby] TCP端口绑定失败: {e}", "error")
+        bound_port = None
+
+        for port in range(LAN_PORT, LAN_PORT + 10):
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                # 不设置 SO_REUSEADDR → 第二个实例 bind 同端口会失败，
+                # 从而尝试下一个端口，杜绝同一台机器双开时自连
+                sock.bind(("", port))
+                sock.listen(1)
+                sock.settimeout(1.0)
+                self._server_sock = sock
+                bound_port = port
+                break
+            except OSError:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                continue
+
+        if bound_port is None:
+            log_event("[Lobby] TCP 端口绑定全部失败（9988-9997）", "error")
             self._accepting = False
             self._server_sock = None
+            return
+
+        self._my_listen_port = bound_port  # 记住自己的端口，连接时跳过
+        self._listen_thread = threading.Thread(target=self._accept_loop, daemon=True)
+        self._listen_thread.start()
+        log_event(f"[Lobby] TCP 监听启动: 端口 {bound_port}")
 
     def _stop_tcp_listen(self) -> None:
         """停止 TCP 监听（不关闭游戏连接 socket）。"""
@@ -187,7 +211,10 @@ class LobbyScreen:
     # ── 网络连接 ──────────────────────────────────────────────
 
     def _accept_loop(self) -> None:
-        """TCP 接受连接循环（被动方 → Client 角色）。"""
+        """TCP 接受连接循环（被动方 → Client 角色）。
+
+        自连防护由端口隔离保证（不设 SO_REUSEADDR → 第二个实例绑不同端口）。
+        """
         while self._accepting and not self._connected:
             try:
                 if self._server_sock is None:
@@ -205,7 +232,9 @@ class LobbyScreen:
                 if parsed:
                     msg_type, payload = parsed
                     if msg_type == "INVITE":
-                        # 自动接受
+                        # 双开时两个实例共用同一 player_profile → player_id 相同
+                        # 不用 player_id 判断自连，而是依赖端口隔离（不设 SO_REUSEADDR）
+                        # 所以这里直接接受
                         resp = make_message("INVITE_ACCEPT", {
                             "player_id": get_player_id(),
                             "player_name": get_player_name(),
@@ -223,7 +252,10 @@ class LobbyScreen:
                 continue
 
     def _send_invite(self, peer_ip: str, peer_id: str = "") -> None:
-        """向目标IP发送邀请（主动方 → Host 角色）。"""
+        """向目标IP发送邀请（主动方 → Host 角色）。
+
+        双开兼容：依次尝试 LAN_PORT ~ LAN_PORT+9 端口连接。
+        """
         if self._waiting_response or self._connected:
             return
 
@@ -231,11 +263,33 @@ class LobbyScreen:
         self._invited_player_id = peer_id
 
         def _connect():
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(5.0)
-                sock.connect((peer_ip, LAN_PORT))
+            sock = None
+            connected_port = None
 
+            # 判断是否连接本机（双开场景）
+            is_localhost = peer_ip in ("127.0.0.1", "localhost", "0.0.0.0")
+
+            # 尝试多个端口（双开兼容）
+            for port in range(LAN_PORT, LAN_PORT + 10):
+                # 双开时跳过自己的监听端口，防止自连
+                if is_localhost and port == self._my_listen_port:
+                    continue
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(2.0)
+                    s.connect((peer_ip, port))
+                    sock = s
+                    connected_port = port
+                    break
+                except (socket.timeout, ConnectionRefusedError, OSError):
+                    continue
+
+            if sock is None:
+                self._status_msg = f"连接失败: 无法连接到 {peer_ip}"
+                self._waiting_response = False
+                return
+
+            try:
                 # 发送邀请
                 invite_msg = make_message("INVITE", {
                     "player_id": get_player_id(),
@@ -270,6 +324,10 @@ class LobbyScreen:
             except Exception as e:
                 self._status_msg = f"连接失败: {e}"
                 self._waiting_response = False
+                try:
+                    sock.close()
+                except Exception:
+                    pass
 
         self._waiting_response = True
         t = threading.Thread(target=_connect, daemon=True)
@@ -377,10 +435,17 @@ class LobbyScreen:
         pygame.draw.rect(self.screen, _PANEL_BG, self._panel_rect, border_radius=10)
         pygame.draw.rect(self.screen, _PANEL_BORDER, self._panel_rect, width=1, border_radius=10)
 
-        # ── 局域网名称 ─────────────────────────────────────────
+        # ── 局域网名称 + 监听端口 ─────────────────────────────────
         subnet = self._discovery.get_subnet_name()
         lan_font = self.get_font(15)
-        lan_surf = lan_font.render(f"局域网: {subnet}", True, _LAN_LABEL_CLR)
+        # 显示本机监听端口
+        listen_port = ""
+        if self._server_sock:
+            try:
+                listen_port = f":{self._server_sock.getsockname()[1]}"
+            except Exception:
+                pass
+        lan_surf = lan_font.render(f"局域网: {subnet}  监听端口: {listen_port or '未启动'}", True, _LAN_LABEL_CLR)
         self.screen.blit(lan_surf, (self._panel_rect.x + 16, self._panel_rect.y + 12))
 
         # ── 自己信息 ───────────────────────────────────────────

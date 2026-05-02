@@ -46,6 +46,7 @@ class GameClient:
             try:
                 chunk = self._sock.recv(65536)
                 if not chunk:
+                    print("[GameClient] Host 断开连接")
                     break
                 buf += chunk
                 # 可能一次收到多条消息，只保留最新的
@@ -59,13 +60,28 @@ class GameClient:
                                 self._latest_state = payload
             except BlockingIOError:
                 time.sleep(0.016)
-            except Exception:
+            except ConnectionResetError:
+                print("[GameClient] 连接被 Host 重置")
+                break
+            except OSError as e:
+                if self._running:
+                    print(f"[GameClient] 接收异常: {e}")
+                break
+            except Exception as e:
+                if self._running:
+                    print(f"[GameClient] 未知异常: {e}")
                 break
 
-    def get_latest_state(self) -> dict[str, Any]:
-        """获取最新的游戏状态。"""
+    def get_latest_state(self) -> dict[str, Any] | None:
+        """获取最新的游戏状态。
+
+        Returns:
+            状态字典（非空），或 None（未收到任何状态）。
+        """
         with self._lock:
-            return dict(self._latest_state)
+            if self._latest_state and self._latest_state.get("phase"):
+                return dict(self._latest_state)
+            return None
 
     def send_action(self, action: str, data: dict[str, Any] | None = None) -> None:
         """发送操作给 Host。

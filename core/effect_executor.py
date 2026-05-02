@@ -784,6 +784,224 @@ def _exec_support_dmg_multiplier(
              f"effect:SUPPORT_DMG_MULTIPLIER({card_name}:无辅助)")
 
 
+# ── 新增技能执行函数（22张新卡牌）────────────────────────────
+
+def _exec_weaken_all_opponent(
+    state: dict[str, Any],
+    player_key: str,
+    card: Any,
+    skill_data: dict[str, Any],
+    logs: list[dict[str, Any]],
+) -> None:
+    """WEAKEN_ALL：弱化对手所有卡牌，攻击力强制降至1点。
+
+    实现逻辑：
+      1. 在结算阶段（resolve_clash 前遍历对手 played_cards）
+      2. 读取对手所有主卡和辅助卡的原始 atk
+      3. 临时将其 atk 设为 1
+      4. 伤害计算时使用该临时值
+    """
+    opponent_key = _get_opponent_key(player_key)
+
+    # 在 temp 中标记对手被弱化，resolution_engine 会在伤害计算时读取此标记
+    temp = state.setdefault("temp", {})
+    temp[f"{opponent_key}_weakened"] = True
+
+    card_name = str(_card_val(card, "name", "未知"))
+    _log(logs, player_key, "weaken_all", 1, f"effect:WEAKEN_ALL({card_name})")
+    _push_toast(state, f"📉 {card_name} 触发：对手所有卡牌攻击力降至1")
+
+
+def _exec_absorb_shield_opponent(
+    state: dict[str, Any],
+    player_key: str,
+    card: Any,
+    skill_data: dict[str, Any],
+    logs: list[dict[str, Any]],
+) -> None:
+    """ABSORB_SHIELD：吸收对手全部护盾值。
+
+    实现逻辑：
+      1. 读取对手 shield 值
+      2. 将对手 shield 设为 0
+      3. 可选：将吸收的护盾值转化为自身增益（当前仅移除对手护盾）
+    """
+    opponent_key = _get_opponent_key(player_key)
+    ps = _get_player_state(state, opponent_key)
+    buffs = _ensure_buffs(ps)
+
+    # 找出所有 shield 类型 buff 并计算总值
+    shield_buffs = [b for b in buffs if b.get("type") == "shield"]
+    total_shield = sum(int(b.get("value", 0)) for b in shield_buffs)
+
+    if total_shield > 0:
+        # 移除所有 shield 类型 buff
+        ps["buffs"] = [b for b in buffs if b.get("type") != "shield"]
+        card_name = str(_card_val(card, "name", "未知"))
+        _log(logs, player_key, "absorb_shield", total_shield,
+             f"effect:ABSORB_SHIELD({card_name},amount={total_shield})")
+        _push_toast(state, f"🧲 {card_name} 吸收了对手 {total_shield} 点护盾")
+    else:
+        card_name = str(_card_val(card, "name", "未知"))
+        _log(logs, player_key, "absorb_shield_fail", 0,
+             f"effect:ABSORB_SHIELD({card_name},no_shield)")
+
+
+def _exec_dmg_buff_add_flat(
+    state: dict[str, Any],
+    player_key: str,
+    card: Any,
+    skill_data: dict[str, Any],
+    logs: list[dict[str, Any]],
+) -> None:
+    """DMG_BUFF_ADD_N：增加同出卡牌伤害 N 点（如 ADD_2、ADD_3）。
+
+    实现逻辑：
+      1. 读取同出卡牌列表（state["played_cards"][player_key]）
+      2. 累加除本卡外的所有卡牌的 atk
+      3. 在 temp 中设置 dmg_boost
+    """
+    boost_value = int(skill_data.get("value", 0))
+    played = state.get("played_cards", {})
+    my_played: list[Any] = list(played.get(player_key, []))
+    this_card_id = int(_card_val(card, "id", -1))
+
+    # 排除本卡，累加其他卡牌的 atk
+    total_boost = sum(
+        int(_card_val(c, "atk", 0))
+        for c in my_played
+        if int(_card_val(c, "id", -2)) != this_card_id
+    )
+
+    # 最终增伤 = boost_value + 累加值（如果 boost_value=3，瓷砖萝卜=3）
+    total_boost += boost_value
+
+    if total_boost > 0:
+        temp = state.setdefault("temp", {})
+        current_boost = int(temp.get(f"{player_key}_atk_boost", 0))
+        temp[f"{player_key}_atk_boost"] = current_boost + total_boost
+
+        card_name = str(_card_val(card, "name", "未知"))
+        _log(logs, player_key, "dmg_buff_add_flat", total_boost,
+             f"effect:DMG_BUFF_ADD_3({card_name},total={total_boost})")
+        _push_toast(state, f"⚔️ {card_name} 增伤 +{total_boost} 点")
+    else:
+        _log(logs, player_key, "dmg_buff_add_flat_zero", 0,
+             "no_other_played_cards")
+
+
+def _exec_dmg_buff_2x_counter(
+    state: dict[str, Any],
+    player_key: str,
+    card: Any,
+    skill_data: dict[str, Any],
+    logs: list[dict[str, Any]],
+) -> None:
+    """DMG_BUFF_2X_COUNTER：对克制阵营伤害 ×2。
+
+    区别于西瓜投手的 ×3 和毁灭菇的 ×2（后者的 ×2 是针对无法被克制的情况）。
+
+    实现逻辑：
+      1. 获取对手本回合出牌的主卡阵营
+      2. 判断是否克制
+      3. 若是，设置 dmg_multiplier = 2
+    """
+    my_faction = str(_card_val(card, "faction", ""))
+    card_id = int(_card_val(card, "id", -1))
+    card_name = str(_card_val(card, "name", "未知"))
+
+    # 橡木弓手是射手，克制坦克
+    if my_faction != "射":
+        _log(logs, player_key, "dmg_buff_2x_counter_skip", 0,
+             f"faction:{my_faction} != 射")
+        return
+
+    opponent_key = _get_opponent_key(player_key)
+    opponent_main = None
+    played = state.get("played_cards", {})
+    opponent_played = played.get(opponent_key, [])
+    for c in opponent_played:
+        if str(_card_val(c, "type", "")) == "主":
+            opponent_main = c
+            break
+
+    if opponent_main is None:
+        _log(logs, player_key, "dmg_buff_2x_counter_skip", 0,
+             "opponent_no_main_card")
+        return
+
+    opponent_faction = str(_card_val(opponent_main, "faction", ""))
+
+    # 射手克制坦克
+    if opponent_faction == "坦":
+        temp = state.setdefault("temp", {})
+        current_mult = float(temp.get(f"{player_key}_dmg_multiplier", 1.0))
+        temp[f"{player_key}_dmg_multiplier"] = current_mult * 2
+        temp[f"{player_key}_countering"] = True
+        temp[f"{player_key}_countering_faction"] = "坦"
+        _log(logs, player_key, "dmg_buff_2x_counter", 2,
+             f"effect:DMG_BUFF_2X_COUNTER({card_name}×2,opp=tank)")
+        _push_toast(state, f"🎯 {card_name} 克制坦克阵营，伤害×2！")
+    else:
+        _log(logs, player_key, "dmg_buff_2x_counter_skip", 0,
+             f"opponent_faction:{opponent_faction} != tank")
+
+
+def _exec_block_next_draw(
+    state: dict[str, Any],
+    player_key: str,
+    card: Any,
+    skill_data: dict[str, Any],
+    logs: list[dict[str, Any]],
+) -> None:
+    """BLOCK_NEXT_DRAW：困窘，使对手在下一个回合无法补牌。
+
+    实现逻辑：
+      1. 在 state 中设置 next_turn_no_draw 标记
+      2. 在下一回合 DRAW_PHASE 检查此标志，若为 True 则跳过抽卡
+      3. 抽卡后重置标志
+    """
+    opponent_key = _get_opponent_key(player_key)
+    state.setdefault("control_effects", {})
+    state["control_effects"][f"{opponent_key}_block_next_draw"] = True
+
+    card_name = str(_card_val(card, "name", "未知"))
+    _log(logs, player_key, "block_next_draw", 1,
+         f"effect:BLOCK_NEXT_DRAW({card_name})")
+    _push_toast(state, f"🌿 {card_name} 触发：对手下回合无法补牌")
+
+
+def _exec_multiply_dmg_by_opponent_count(
+    state: dict[str, Any],
+    player_key: str,
+    card: Any,
+    skill_data: dict[str, Any],
+    logs: list[dict[str, Any]],
+) -> None:
+    """MULTIPLY_DMG_BY_OPPONENT_COUNT：增生，总伤害 = 基础伤害 × 对手出牌数量。
+
+    实现逻辑：
+      1. 获取对手本回合出牌的卡牌列表长度
+      2. 最终伤害 = base_dmg * opponent_card_count
+      3. 若对手未出牌，保持基础伤害（避免0伤害）
+    """
+    opponent_key = _get_opponent_key(player_key)
+    played = state.get("played_cards", {})
+    opponent_played = played.get(opponent_key, [])
+    opponent_card_count = len(opponent_played)
+
+    # 获取本卡基础伤害
+    base_atk = int(_card_val(card, "atk", 0))
+
+    # 至少为1，避免0伤害
+    total_dmg = base_atk * max(1, opponent_card_count)
+
+    card_name = str(_card_val(card, "name", "未知"))
+    _log(logs, player_key, "multiply_dmg_by_opponent_count", opponent_card_count,
+         f"effect:MULTIPLY_DMG_BY_OPPONENT_COUNT({card_name},count={opponent_card_count},total={total_dmg})")
+    _push_toast(state, f"🎳 {card_name} 触发：伤害 ×{opponent_card_count} = {total_dmg}")
+
+
 # ── 执行器派发表 ──────────────────────────────────────────────────
 
 #: handler_key → 执行函数映射表
@@ -791,28 +1009,45 @@ _HANDLER_TABLE: dict[str, Callable[
     [dict[str, Any], str, Any, dict[str, Any], list[dict[str, Any]]],
     None,
 ]] = {
-    "block_one_turn":           _exec_block_one_turn,
-    "discard_by_faction":       _exec_discard_by_faction,
-    "gain_mana":                 _exec_gain_mana,
-    "add_shield":               _exec_add_shield,
-    "heal_to_value":            _exec_heal_to_value,
-    "heal_flat":                 _exec_heal_flat,
-    "disable_atk":              _exec_disable_atk,
-    "silence_opponent":         _exec_silence_opponent,
-    "armor_pierce":             _exec_armor_pierce,
-    "counter_atk_zero":         _exec_counter_atk_zero,
-    "counter_dmg_multiplier":   _exec_counter_dmg_multiplier,
-    "dmg_buff_2x":              _exec_dmg_buff_2x,
-    "steal_random_card":        _exec_steal_random_card,
-    "steal_by_faction":         _exec_steal_by_faction,
-    "cost_to_heal_combo":       _exec_cost_to_heal_combo,
-    "cost_to_heal_self":        _exec_cost_to_heal_self,
-    "atk_to_heal_opponent":     _exec_atk_to_heal_opponent,
-    "reflect_attack":           _exec_reflect_attack,
-    "boost_atk_and_heal":       _exec_boost_atk_and_heal,
-    "reduce_dmg_flat":          _exec_reduce_dmg_flat,
-    "mana_up":                  _exec_mana_up,
-    "support_dmg_multiplier":   _exec_support_dmg_multiplier,
+    # 基础效果
+    "block_one_turn":                _exec_block_one_turn,
+    "discard_by_faction":            _exec_discard_by_faction,
+    "gain_mana":                     _exec_gain_mana,
+    "add_shield":                    _exec_add_shield,
+    "heal_to_value":                 _exec_heal_to_value,
+    "heal_flat":                     _exec_heal_flat,
+    "disable_atk":                   _exec_disable_atk,
+    "silence_opponent":              _exec_silence_opponent,
+    "armor_pierce":                  _exec_armor_pierce,
+    "reduce_dmg_flat":               _exec_reduce_dmg_flat,
+    "mana_up":                       _exec_mana_up,
+
+    # 克制效果
+    "counter_atk_zero":              _exec_counter_atk_zero,
+    "counter_dmg_multiplier":        _exec_counter_dmg_multiplier,
+    "dmg_buff_2x":                   _exec_dmg_buff_2x,
+    "dmg_buff_2x_counter":           _exec_dmg_buff_2x_counter,
+
+    # 增伤 / 连携
+    "support_dmg_multiplier":        _exec_support_dmg_multiplier,
+    "dmg_buff_add_flat":             _exec_dmg_buff_add_flat,
+    "boost_atk_and_heal":            _exec_boost_atk_and_heal,
+
+    # 卡牌交互
+    "steal_random_card":             _exec_steal_random_card,
+    "steal_by_faction":              _exec_steal_by_faction,
+    "cost_to_heal_combo":            _exec_cost_to_heal_combo,
+    "cost_to_heal_self":             _exec_cost_to_heal_self,
+    "atk_to_heal_opponent":          _exec_atk_to_heal_opponent,
+
+    # 控制 / 防御
+    "reflect_attack":                _exec_reflect_attack,
+    "block_next_draw":               _exec_block_next_draw,
+
+    # 特殊效果（22张新卡牌）
+    "weaken_all_opponent":           _exec_weaken_all_opponent,
+    "absorb_shield_opponent":        _exec_absorb_shield_opponent,
+    "multiply_dmg_by_opponent_count": _exec_multiply_dmg_by_opponent_count,
 }
 
 

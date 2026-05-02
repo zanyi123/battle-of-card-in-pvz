@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>植物世界分布统计</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        h1 {
+            text-align: center;
+            color: #fff;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .card {
+            background: rgba(255,255,255,0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .card h2 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        .stats {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            font-size: 14px;
+        }
+        .table-container {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+        th, td {
+            padding: 10px 8px;
+            text-align: center;
+            border: 1px solid #ddd;
+            min-width: 60px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: bold;
+        }
+        th:first-child, td:first-child {
+            background: #f0f0f0;
+            font-weight: bold;
+            min-width: 100px;
+        }
+        tr:nth-child(even) td:nth-child(n+2) {
+            background: #f9f9f9;
+        }
+        tr:hover td {
+            background: #e8f4f8;
+            transform: scale(1.02);
+        }
+        th:hover, td:hover {
+            background: #667eea !important;
+            color: white;
+        }
+        th.empty-cell, td.empty-cell {
+            background: transparent;
+            border: none;
+            cursor: default;
+        }
+        th.empty-cell:hover, td.empty-cell:hover {
+            background: transparent;
+            transform: none;
+        }
+        .tooltip {
+            position: fixed;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            max-width: 300px;
+            z-index: 1000;
+            display: none;
+            line-height: 1.6;
+        }
+        .tooltip h4 {
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .add-form {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+        }
+        .add-form h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .form-group label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .form-group input, .form-group select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .add-form .btn {
+            width: 100%;
+            margin-top: 10px;
+        }
+        .percentage {
+            font-weight: bold;
+        }
+        .red { background: #ffebee; }
+        .orange { background: #fff3e0; }
+        .yellow { background: #fffde7; }
+        .green { background: #e8f5e9; }
+        .blue { background: #e3f2fd; }
+        .purple { background: #f3e5f5; }
+        .pink { background: #fce4ec; }
+        .cyan { background: #e0f7fa; }
+        .gray { background: #f5f5f5; }
+    </style>
+</head>
+<body>
+    <h1>植物世界分布统计</h1>
+    <div class="container">
+        <!-- 表1：植物强度世界分布 -->
+        <div class="card">
+            <h2>📊 表1：植物强度世界分布</h2>
+            <div class="stats" id="stats1">
+                <div class="stats-grid">
+                    <div>总计植物：<span id="total1">0</span>个</div>
+                    <div>0 ATK：<span id="stat0">0</span>个</div>
+                    <div>0-2 ATK：<span id="stat02">0</span>个</div>
+                    <div>3-4 ATK：<span id="stat34">0</span>个</div>
+                    <div>>4 ATK：<span id="stat54">0</span>个</div>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="table1">
+                    <thead>
+                        <tr>
+                            <th>世界</th>
+                            <th class="empty-cell"></th>
+                            <th class="empty-cell"></th>
+                            <th class="empty-cell"></th>
+                            <th class="empty-cell"></th>
+                        </tr>
+                        <tr>
+                            <th></th>
+                            <th>0</th>
+                            <th>0-2</th>
+                            <th>3-4</th>
+                            <th>>4</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody1"></tbody>
+                </table>
+            </div>
+            <div class="add-form">
+                <h3>➕ 添加植物</h3>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>植物名</label>
+                        <input type="text" id="addName" placeholder="植物名称">
+                    </div>
+                    <div class="form-group">
+                        <label>所属世界（编号）</label>
+                        <input type="text" id="addWorld" placeholder="1-11">
+                    </div>
+                    <div class="form-group">
+                        <label>ATK值</label>
+                        <input type="number" id="addAtk" placeholder="攻击值" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>职业（法/射/坦/辅）</label>
+                        <select id="addFaction">
+                            <option value="法">法</option>
+                            <option value="射">射</option>
+                            <option value="坦">坦</option>
+                            <option value="辅">辅</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn" onclick="addPlant()">添加植物</button>
+            </div>
+        </div>
+
+        <!-- 表2：植物职业世界分布 -->
+        <div class="card">
+            <h2>⚔️ 表2：植物职业世界分布</h2>
+            <div class="stats" id="stats2">
+                <div class="stats-grid">
+                    <div>总计植物：<span id="total2">0</span>个</div>
+                    <div>法阵营：<span id="statFa">0</span>个</div>
+                    <div>射阵营：<span id="statSh">0</span>个</div>
+                    <div>坦阵营：<span id="statTk">0</span>个</div>
+                    <div>辅阵营：<span id="statFu">0</span>个</div>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="table2">
+                    <thead>
+                        <tr>
+                            <th>世界</th>
+                            <th class="empty-cell"></th>
+                            <th class="empty-cell"></th>
+                            <th class="empty-cell"></th>
+                            <th class="empty-cell"></th>
+                        </tr>
+                        <tr>
+                            <th></th>
+                            <th>法</th>
+                            <th>射</th>
+                            <th>坦</th>
+                            <th>辅</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody2"></tbody>
+                </table>
+            </div>
+            <div class="add-form">
+                <h3>➕ 添加植物</h3>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>植物名</label>
+                        <input type="text" id="addName2" placeholder="植物名称">
+                    </div>
+                    <div class="form-group">
+                        <label>所属世界（编号）</label>
+                        <input type="text" id="addWorld2" placeholder="1-11">
+                    </div>
+                    <div class="form-group">
+                        <label>ATK值</label>
+                        <input type="number" id="addAtk2" placeholder="攻击值" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>职业（法/射/坦/辅）</label>
+                        <select id="addFaction2">
+                            <option value="法">法</option>
+                            <option value="射">射</option>
+                            <option value="坦">坦</option>
+                            <option value="辅">辅</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn" onclick="addPlant2()">添加植物</button>
+            </div>
+        </div>
+    </div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        // PVZ2世界设定（编号对应 - 中文版）
+        const worlds = [
+            { id: 1, name: "天空之城", emoji: "☁️", color: "#e0f2fe" },
+            { id: 2, name: "神秘埃及", emoji: "🏺", color: "#fef3c7" },
+            { id: 3, name: "海盗港湾", emoji: "🏴‍☠️", color: "#bae6fd" },
+            { id: 4, name: "狂野西部", emoji: "🔫", color: "#fed7aa" },
+            { id: 5, name: "功夫世界", emoji: "🔥", color: "#fde68a" },
+            { id: 6, name: "未来世界", emoji: "🤖", color: "#ddd6fe" },
+            { id: 7, name: "黑暗时代", emoji: "⚰️", color: "#4b5563" },
+            { id: 8, name: "冰河世界", emoji: "❄️", color: "#a5f3fc" },
+            { id: 9, name: "巨浪沙滩", emoji: "🌊", color: "#7dd3fc" },
+            { id: 10, name: "恐龙危机", emoji: "🦖", color: "#a7f3d0" },
+            { id: 11, name: "摩登世界", emoji: "🏙️", color: "#e5e7eb" },
+            { id: 99, name: "无明确世界", emoji: "❓", color: "#9ca3af" }
+        ];
+
+        // 默认植物数据（根据PVZ2中文版官方设定分类）
+        let plants = [
+            // 天空之城 (1) - 基础植物
+            { name: "向日葵", world: 1, atk: 0, faction: "辅" },
+            { name: "豌豆射手", world: 1, atk: 1, faction: "射" },
+            { name: "坚果墙", world: 1, atk: 1, faction: "坦" },
+            { name: "火爆辣椒", world: 1, atk: 3, faction: "法" },
+            { name: "梅小美", world: 1, atk: 1, faction: "射" },
+            { name: "玉米投手", world: 1, atk: 2, faction: "射" },
+            { name: "原始猕猴桃", world: 1, atk: 3, faction: "坦" },
+            { name: "爆裂葡萄", world: 1, atk: 5, faction: "辅" },
+            { name: "寒冰射手", world: 1, atk: 2, faction: "射" },
+            { name: "阳光蓓蕾", world: 1, atk: 0, faction: "辅" },
+            { name: "幽暮投手", world: 1, atk: 3, faction: "射" },
+            { name: "原始坚果墙", world: 1, atk: 6, faction: "坦" },
+            { name: "窝瓜", world: 1, atk: 4, faction: "坦" },
+            { name: "炙热山葵", world: 1, atk: 3, faction: "坦" },
+            { name: "巴豆", world: 1, atk: 0, faction: "辅" },
+            { name: "仙桃", world: 1, atk: 0, faction: "辅" },
+            { name: "棉小雪", world: 1, atk: 1, faction: "辅" },
+            // 神秘埃及 (2)
+            { name: "白萝卜", world: 2, atk: 2, faction: "坦" },
+            { name: "冰龙草", world: 2, atk: 4, faction: "法" },
+            { name: "魔术菇", world: 2, atk: 3, faction: "法" },
+            { name: "梛子加农炮", world: 2, atk: 5, faction: "射" },
+            { name: "竹笋", world: 2, atk: 1, faction: "辅" },
+            { name: "火龙果", world: 2, atk: 2, faction: "法" },
+            { name: "火龙草", world: 2, atk: 3, faction: "法" },
+            { name: "闪电芦苇", world: 2, atk: 1, faction: "法" },
+            { name: "龙舌兰", world: 2, atk: 3, faction: "辅" },
+            { name: "阳光菇", world: 2, atk: 0, faction: "辅" },
+            { name: "仙人掌", world: 2, atk: 3, faction: "射" },
+            { name: "红针花", world: 2, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 2, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 2, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 2, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 2, atk: 4, faction: "射" },
+            { name: "毁灭菇", world: 2, atk: 5, faction: "法" },
+            // 狂野西部 (3)
+            { name: "毒影菇", world: 3, atk: 3, faction: "法" },
+            { name: "旋转菠萝", world: 3, atk: 1, faction: "坦" },
+            { name: "榴莲", world: 3, atk: 1, faction: "坦" },
+            { name: "香水蘑菇", world: 3, atk: 0, faction: "辅" },
+            { name: "粉丝心叶兰", world: 3, atk: 0, faction: "辅" },
+            { name: "魅惑菇", world: 3, atk: 1, faction: "辅" },
+            { name: "能量花", world: 3, atk: 0, faction: "辅" },
+            { name: "向日葵歌手", world: 3, atk: 0, faction: "辅" },
+            { name: "三叶草", world: 3, atk: 1, faction: "辅" },
+            { name: "熊果臼炮", world: 3, atk: 2, faction: "坦" },
+            { name: "胆小荆棘", world: 3, atk: 1, faction: "坦" },
+            { name: "暗樱草", world: 3, atk: 1, faction: "坦" },
+            { name: "南瓜头", world: 3, atk: 3, faction: "坦" },
+            { name: "全息坚果", world: 3, atk: 2, faction: "坦" },
+            { name: "南瓜巫师", world: 3, atk: 1, faction: "法" },
+            { name: "强酸柠檬", world: 3, atk: 3, faction: "法" },
+            { name: "热辣海藻", world: 3, atk: 2, faction: "法" },
+            { name: "岩浆番石榴", world: 3, atk: 4, faction: "法" },
+            { name: "水晶兰", world: 3, atk: 2, faction: "法" },
+            { name: "双重射手", world: 3, atk: 2, faction: "射" },
+            // 功夫世界 (4) - 火焰/岩浆主题
+            { name: "火龙果", world: 4, atk: 2, faction: "法" },
+            { name: "岩浆番石榴", world: 4, atk: 4, faction: "法" },
+            { name: "南瓜巫师", world: 4, atk: 1, faction: "法" },
+            { name: "强酸柠檬", world: 4, atk: 3, faction: "法" },
+            { name: "热辣海藻", world: 4, atk: 2, faction: "法" },
+            { name: "水晶兰", world: 4, atk: 2, faction: "法" },
+            // 未来世界 (5)
+            { name: "熊果臼炮", world: 5, atk: 2, faction: "坦" },
+            { name: "胆小荆棘", world: 5, atk: 1, faction: "坦" },
+            { name: "暗樱草", world: 5, atk: 1, faction: "坦" },
+            { name: "全息坚果", world: 5, atk: 2, faction: "坦" },
+            { name: "双重射手", world: 5, atk: 2, faction: "射" },
+            // 黑暗时代 (6)
+            { name: "旋转菠萝", world: 6, atk: 1, faction: "坦" },
+            { name: "榴莲", world: 6, atk: 1, faction: "坦" },
+            { name: "香奈蘑菇", world: 6, atk: 0, faction: "辅" },
+            { name: "魅惑菇", world: 6, atk: 1, faction: "辅" },
+            { name: "能量花", world: 6, atk: 0, faction: "辅" },
+            { name: "向日葵歌手", world: 6, atk: 0, faction: "辅" },
+            { name: "三叶草", world: 6, atk: 1, faction: "辅" },
+            // 巨浪沙滩 (7)
+            { name: "熊果臼炮", world: 7, atk: 2, faction: "坦" },
+            { name: "胆小荆棘", world: 7, atk: 1, faction: "坦" },
+            { name: "暗樱草", world: 7, atk: 1, faction: "坦" },
+            { name: "全息坚果", world: 7, atk: 2, faction: "坦" },
+            { name: "双重射手", world: 7, atk: 2, faction: "射" },
+            // 冰河世界 (8)
+            { name: "梛子加农炮", world: 8, atk: 5, faction: "射" },
+            { name: "红针花", world: 8, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 8, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 8, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 8, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 8, atk: 4, faction: "射" },
+            { name: "毁灭菇", world: 8, atk: 5, faction: "法" },
+            // 天空之城 (9)
+            { name: "毒影菇", world: 9, atk: 3, faction: "法" },
+            { name: "旋转菠萝", world: 9, atk: 1, faction: "坦" },
+            { name: "榴莲", world: 9, atk: 1, faction: "坦" },
+            { name: "香奈蘑菇", world: 9, atk: 0, faction: "辅" },
+            { name: "魅惑菇", world: 9, atk: 1, faction: "辅" },
+            { name: "能量花", world: 9, atk: 0, faction: "辅" },
+            { name: "向日葵歌手", world: 9, atk: 0, faction: "辅" },
+            { name: "三叶草", world: 9, atk: 1, faction: "辅" },
+            // 失落之城 (10)
+            { name: "梛子加农炮", world: 10, atk: 5, faction: "射" },
+            { name: "仙人掌", world: 10, atk: 3, faction: "射" },
+            { name: "红针花", world: 10, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 10, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 10, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 10, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 10, atk: 4, faction: "射" },
+            { name: "毁灭菇", world: 10, atk: 5, faction: "法" },
+            // 摇滚年代 (11)
+            { name: "梛子加农炮", world: 11, atk: 5, faction: "射" },
+            { name: "红针花", world: 11, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 11, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 11, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 11, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 11, atk: 4, faction: "射" },
+            { name: "毁灭菇", world: 11, atk: 5, faction: "法" },
+            // 恐龙危机 (12)
+            { name: "梛子加农炮", world: 12, atk: 5, faction: "射" },
+            { name: "红针花", world: 12, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 12, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 12, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 12, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 12, atk: 4, faction: "射" },
+            // 摩登世界 (13)
+            { name: "梛子加农炮", world: 13, atk: 5, faction: "射" },
+            { name: "红针花", world: 13, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 13, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 13, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 13, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 13, atk: 4, faction: "射" },
+            // 蒸汽时代 (14)
+            { name: "梛子加农炮", world: 14, atk: 5, faction: "射" },
+            { name: "红针花", world: 14, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 14, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 14, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 14, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 14, atk: 4, faction: "射" },
+            // 复兴时代 (15)
+            { name: "梛子加农炮", world: 15, atk: 5, faction: "射" },
+            { name: "红针花", world: 15, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 15, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 15, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 15, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 15, atk: 4, faction: "射" },
+            // 平安时代 (16)
+            { name: "梛子加农炮", world: 16, atk: 5, faction: "射" },
+            { name: "红针花", world: 16, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 16, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 16, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 16, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 16, atk: 4, faction: "射" },
+            // 海底世界 (17)
+            { name: "梛子加农炮", world: 17, atk: 5, faction: "射" },
+            { name: "红针花", world: 17, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 17, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 17, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 17, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 17, atk: 4, faction: "射" },
+            // 童话森林 (18)
+            { name: "梛子加农炮", world: 18, atk: 5, faction: "射" },
+            { name: "红针花", world: 18, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 18, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 18, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 18, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 18, atk: 4, faction: "射" },
+            // Z公司 (19)
+            { name: "梛子加农炮", world: 19, atk: 5, faction: "射" },
+            { name: "红针花", world: 19, atk: 2, faction: "射" },
+            { name: "莲小蓬", world: 19, atk: 1, faction: "射" },
+            { name: "小喷菇", world: 19, atk: 1, faction: "射" },
+            { name: "飞镖洋蓟", world: 19, atk: 5, faction: "射" },
+            { name: "西瓜投手", world: 19, atk: 4, faction: "射" },
+            // 无明确世界 (99)
+            { name: "香奈蘑菇", world: 99, atk: 0, faction: "辅" },
+            { name: "能量花", world: 99, atk: 0, faction: "辅" },
+            { name: "向日葵歌手", world: 99, atk: 0, faction: "辅" },
+            { name: "三叶草", world: 99, atk: 1, faction: "辅" },
+            { name: "暗樱草", world: 99, atk: 1, faction: "坦" },
+            { name: "全息坚果", world: 99, atk: 2, faction: "坦" },
+            { name: "强酸柠檬", world: 99, atk: 3, faction: "法" },
+            { name: "热辣海藻", world: 99, atk: 2, faction: "法" },
+            { name: "水晶兰", world: 99, atk: 2, faction: "法" },
+            { name: "双重射手", world: 99, atk: 2, faction: "射" }
+        ];
+
+        // 渲染表格1：强度分布
+        function renderTable1() {
+            const tbody = document.getElementById('tbody1');
+            tbody.innerHTML = '';
+
+            // 分组数据
+            const groups = {
+                '0': [],
+                '0-2': [],
+                '3-4': [],
+                '>4': []
+            };
+
+            plants.forEach(plant => {
+                let groupKey;
+                if (plant.atk === 0) {
+                    groupKey = '0';
+                } else if (plant.atk <= 2) {
+                    groupKey = '0-2';
+                } else if (plant.atk <= 4) {
+                    groupKey = '3-4';
+                } else {
+                    groupKey = '>4';
+                }
+                groups[groupKey].push(plant);
+            });
+
+            // 计算每个世界在每个ATK段的数量
+            const worldData = [];
+            worlds.forEach(world => {
+                const rowData = {
+                    name: world.name,
+                    emoji: world.emoji,
+                    data: {}
+                };
+                ['0', '0-2', '3-4', '>4'].forEach(key => {
+                    rowData.data[key] = groups[key].filter(p => p.world === world.id).length;
+                });
+                worldData.push(rowData);
+            });
+
+            // 渲染行
+            worldData.forEach(world => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td title="${world.emoji} ${world.name}">${world.name}</td>
+                    <td class="${getColorClass(world.data['0'])}" data-world="${world.id}" data-group="0" onclick="showPlants(this)">${world.data['0']}</td>
+                    <td class="${getColorClass(world.data['0-2'])}" data-world="${world.id}" data-group="0-2" onclick="showPlants(this)">${world.data['0-2']}</td>
+                    <td class="${getColorClass(world.data['3-4'])}" data-world="${world.id}" data-group="3-4" onclick="showPlants(this)">${world.data['3-4']}</td>
+                    <td class="${getColorClass(world.data['>4'])}" data-world="${world.id}" data-group=">4" onclick="showPlants(this)">${world.data['>4']}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // 更新统计
+            updateStats1();
+        }
+
+        function updateStats1() {
+            const total = plants.length;
+            const stat0 = plants.filter(p => p.atk === 0).length;
+            const stat02 = plants.filter(p => p.atk > 0 && p.atk <= 2).length;
+            const stat34 = plants.filter(p => p.atk > 2 && p.atk <= 4).length;
+            const stat54 = plants.filter(p => p.atk > 4).length;
+
+            document.getElementById('total1').textContent = total;
+            document.getElementById('stat0').textContent = stat0;
+            document.getElementById('stat02').textContent = stat02;
+            document.getElementById('stat34').textContent = stat34;
+            document.getElementById('stat54').textContent = stat54;
+        }
+
+        function getColorClass(count) {
+            if (count === 0) return '';
+            if (count <= 2) return 'red';
+            if (count <= 4) return 'orange';
+            if (count <= 6) return 'yellow';
+            return 'green';
+        }
+
+        // 渲染表格2：职业分布
+        function renderTable2() {
+            const tbody = document.getElementById('tbody2');
+            tbody.innerHTML = '';
+
+            // 分组数据
+            const groups = {
+                '法': [],
+                '射': [],
+                '坦': [],
+                '辅': []
+            };
+
+            plants.forEach(plant => {
+                groups[plant.faction].push(plant);
+            });
+
+            // 计算每个世界在每个职业的数量
+            const worldData = [];
+            worlds.forEach(world => {
+                const rowData = {
+                    name: world.name,
+                    emoji: world.emoji,
+                    data: {}
+                };
+                ['法', '射', '坦', '辅'].forEach(faction => {
+                    rowData.data[faction] = groups[faction].filter(p => p.world === world.id).length;
+                });
+                worldData.push(rowData);
+            });
+
+            // 渲染行
+            worldData.forEach(world => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td title="${world.emoji} ${world.name}">${world.name}</td>
+                    <td class="${getColorClass2(world.data['法'])}" data-world="${world.id}" data-faction="法" onclick="showPlants(this)">${world.data['法']}</td>
+                    <td class="${getColorClass2(world.data['射'])}" data-world="${world.id}" data-faction="射" onclick="showPlants(this)">${world.data['射']}</td>
+                    <td class="${getColorClass2(world.data['坦'])}" data-world="${world.id}" data-faction="坦" onclick="showPlants(this)">${world.data['坦']}</td>
+                    <td class="${getColorClass2(world.data['辅'])}" data-world="${world.id}" data-faction="辅" onclick="showPlants(this)">${world.data['辅']}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // 更新统计
+            updateStats2();
+        }
+
+        function updateStats2() {
+            const total = plants.length;
+            const statFa = plants.filter(p => p.faction === '法').length;
+            const statSh = plants.filter(p => p.faction === '射').length;
+            const statTk = plants.filter(p => p.faction === '坦').length;
+            const statFu = plants.filter(p => p.faction === '辅').length;
+
+            document.getElementById('total2').textContent = total;
+            document.getElementById('statFa').textContent = statFa;
+            document.getElementById('statSh').textContent = statSh;
+            document.getElementById('statTk').textContent = statTk;
+            document.getElementById('statFu').textContent = statFu;
+        }
+
+        function getColorClass2(count) {
+            if (count === 0) return '';
+            if (count <= 2) return 'pink';
+            if (count <= 4) return 'purple';
+            if (count <= 6) return 'blue';
+            return 'cyan';
+        }
+
+        // 显示植物列表
+        function showPlants(element) {
+            const world = element.dataset.world;
+            const group = element.dataset.group || element.dataset.faction;
+            const value = element.textContent;
+
+            if (value === '0') return;
+
+            let filteredPlants;
+            if (element.dataset.group) {
+                // 表1：按ATK分组
+                let atkGroup;
+                if (element.dataset.group === '0') atkGroup = 0;
+                else if (element.dataset.group === '0-2') atkGroup = (0, 2);
+                else if (element.dataset.group === '3-4') atkGroup = (3, 4);
+                else if (element.dataset.group === '>4') atkGroup = (5, Infinity);
+
+                filteredPlants = plants.filter(p =>
+                    p.world === parseInt(world) &&
+                    p.atk >= atkGroup[0] &&
+                    p.atk <= atkGroup[1]
+                );
+            } else {
+                // 表2：按职业分组
+                filteredPlants = plants.filter(p =>
+                    p.world === parseInt(world) &&
+                    p.faction === group
+                );
+            }
+
+            const tooltip = document.getElementById('tooltip');
+            let content = '';
+            filteredPlants.forEach(p => {
+                const worldName = worlds.find(w => w.id === p.world).name;
+                content += `<div><strong>${p.name}</strong> (${worldName}) ATK:${p.atk} ${p.faction}</div>`;
+            });
+
+            tooltip.innerHTML = `
+                <h4>${worlds.find(w => w.id === parseInt(world)).emoji} ${worlds.find(w => w.id === parseInt(world)).name} - ${element.textContent}植物</h4>
+                <div>${content}</div>
+            `;
+
+            tooltip.style.display = 'block';
+            tooltip.style.left = element.getBoundingClientRect().left + 10 + 'px';
+            tooltip.style.top = element.getBoundingClientRect().top + 50 + 'px';
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.tooltip')) {
+                document.getElementById('tooltip').style.display = 'none';
+            }
+        });
+
+        // 添加植物
+        function addPlant() {
+            const name = document.getElementById('addName').value.trim();
+            const world = parseInt(document.getElementById('addWorld').value);
+            const atk = parseInt(document.getElementById('addAtk').value);
+            const faction = document.getElementById('addFaction').value;
+
+            if (!name || !world || isNaN(atk) || !faction) {
+                alert('请填写完整信息！');
+                return;
+            }
+
+            plants.push({ name, world, atk, faction });
+            renderTable1();
+            renderTable2();
+            saveData();
+
+            // 清空输入
+            document.getElementById('addName').value = '';
+            document.getElementById('addWorld').value = '';
+            document.getElementById('addAtk').value = '';
+        }
+
+        function addPlant2() {
+            const name = document.getElementById('addName2').value.trim();
+            const world = parseInt(document.getElementById('addWorld2').value);
+            const atk = parseInt(document.getElementById('addAtk2').value);
+            const faction = document.getElementById('addFaction2').value;
+
+            if (!name || !world || isNaN(atk) || !faction) {
+                alert('请填写完整信息！');
+                return;
+            }
+
+            plants.push({ name, world, atk, faction });
+            renderTable1();
+            renderTable2();
+            saveData();
+
+            // 清空输入
+            document.getElementById('addName2').value = '';
+            document.getElementById('addWorld2').value = '';
+            document.getElementById('addAtk2').value = '';
+        }
+
+        // 保存数据
+        function saveData() {
+            localStorage.setItem('pvzPlants', JSON.stringify(plants));
+        }
+
+        // 加载数据
+        function loadData() {
+            const saved = localStorage.getItem('pvzPlants');
+            if (saved) {
+                plants = JSON.parse(saved);
+            }
+            renderTable1();
+            renderTable2();
+        }
+
+        // 初始化
+        loadData();
+    </script>
+</body>
+</html>

@@ -99,6 +99,14 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "desc": "为自身添加2点护盾值",
         # 拥有此技能的卡：48-全息坚果
     },
+    "SHIELD_4": {
+        "category": "SHIELD",
+        "value": 4,
+        "target": TARGET_SELF,
+        "handler_key": "add_shield",
+        "desc": "为自身添加4点护盾值",
+        # 拥有此技能的卡：58-高坚果
+    },
     "SHIELD_6": {
         "category": "SHIELD",
         "value": 6,
@@ -116,6 +124,14 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "handler_key": "gain_mana",
         "desc": "精力上限+1",
         # 拥有此技能的卡：1-向日葵
+    },
+    "MANA_2": {
+        "category": "MANA",
+        "value": 2,
+        "target": TARGET_SELF,
+        "handler_key": "gain_mana",
+        "desc": "精力上限+2",
+        # 拥有此技能的卡：76-金蟾菇
     },
     "MANA_3": {
         "category": "MANA",
@@ -135,13 +151,21 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
     },
 
     # ── HEAL 类（生命恢复） ───────────────────────────────────────
+    "HEAL_1": {
+        "category": "HEAL",
+        "value": 1,
+        "target": TARGET_SELF,
+        "handler_key": "heal_flat",
+        "desc": "恢复1点生命值",
+        # 拥有此技能的卡：61-棱镜草
+    },
     "HEAL_2": {
         "category": "HEAL",
         "value": 2,
         "target": TARGET_SELF,
         "handler_key": "heal_flat",
         "desc": "恢复2点生命值",
-        # 拥有此技能的卡：18-白萝卜
+        # 拥有此技能的卡：18-白萝卜, 67-花生射手, 73-甜菜护卫
     },
     "HEAL_3": {
         "category": "HEAL",
@@ -193,7 +217,15 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "target": TARGET_OPPONENT,
         "handler_key": "armor_pierce",
         "desc": "破甲：攻击无视对手护盾，直接造成伤害",
-        # 拥有此技能的卡：24-火龙草
+        # 拥有此技能的卡：24-火龙草, 11-幽暮投手
+    },
+    "ARMOR_PEN": {
+        "category": "ARMOR_PEN",
+        "value": 1,
+        "target": TARGET_OPPONENT,
+        "handler_key": "armor_pierce",
+        "desc": "破甲：攻击无视对手护盾，直接造成伤害",
+        # 拥有此技能的卡：65-火葫芦
     },
 
     # ── COUNTER 类（克制效果）───────────────────────────────────
@@ -303,7 +335,15 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "target": TARGET_SELF,
         "handler_key": "reduce_dmg_flat",
         "desc": "对对手每张出牌减少2点伤害（固定减伤，非百分比）",
-        # 拥有此技能的卡：9-寒冰射手、44-熊果臼炮
+        # 拥有此技能的卡：9-寒冰射手, 44-熊果臼炮
+    },
+    "DMG_REDUCE_2": {
+        "category": "DMG_REDUCE",
+        "value": 2,
+        "target": TARGET_SELF,
+        "handler_key": "reduce_dmg_flat",
+        "desc": "减伤：降低受到伤害2点",
+        # 拥有此技能的卡：75-飓风甘蓝
     },
 
     # ── SUPPORT_DMG 类（辅助增伤）─────────────────────────────────
@@ -314,6 +354,74 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "handler_key": "support_dmg_multiplier",
         "desc": "有辅助卡时，伤害×3",
         # 拥有此技能的卡：30-莲小蓬
+    },
+
+    # ── WEAKEN 类（削弱） ──────────────────────────────────────────
+    "WEAKEN_ALL": {
+        "category": "WEAKEN",
+        "value": 1,
+        "target": TARGET_OPPONENT,
+        "handler_key": "weaken_all_opponent",
+        "desc": "弱化：对手所有卡牌攻击力强制降至1点",
+        # 拥有此技能的卡：59-钢地刺
+    },
+
+    # ── ABSORB 类（吸收护盾） ──────────────────────────────────────
+    "ABSORB_SHIELD": {
+        "category": "ABSORB",
+        "value": 0,
+        "target": TARGET_OPPONENT,
+        "handler_key": "absorb_shield_opponent",
+        "desc": "吸收护盾：移除对手全部护盾值",
+        # 拥有此技能的卡：66-磁力菇
+    },
+
+    # ── DMG_BUFF 类（增伤） ─────────────────────────────────────────
+    "DMG_BUFF_2X_COUNTER": {
+        "category": "DMG_BUFF",
+        "value": 2,
+        "target": TARGET_SELF,
+        "handler_key": "dmg_buff_2x_counter",
+        "desc": "对克制阵营伤害×2",
+        # 拥有此技能的卡：68-橡木弓手
+    },
+    "DMG_BUFF_ADD_3": {
+        "category": "DMG_BUFF",
+        "value": 3,
+        "target": TARGET_SELF,
+        "handler_key": "dmg_buff_add_flat",
+        "desc": "增加同出卡牌伤害3点",
+        # 拥有此技能的卡：64-瓷砖萝卜
+    },
+
+    # ── BLOCK 类（控制-困窘） ──────────────────────────────────────
+    "BLOCK_NEXT_DRAW": {
+        "category": "BLOCK",
+        "value": 1,
+        "target": TARGET_OPPONENT,
+        "handler_key": "block_next_draw",
+        "desc": "困窘：对手下回合无法补牌",
+        # 拥有此技能的卡：69-缠绕水草
+    },
+
+    # ── MULTIPLY 类（增生） ─────────────────────────────────────────
+    "MULTIPLY_DMG_BY_OPPONENT_COUNT": {
+        "category": "MULTIPLY",
+        "value": 0,
+        "target": TARGET_SELF,
+        "handler_key": "multiply_dmg_by_opponent_count",
+        "desc": "增生：总伤害=基础伤害×对手出牌数量",
+        # 拥有此技能的卡：71-保龄泡泡
+    },
+
+    # ── SILENCE 类补充（沉默攻击） ─────────────────────────────────
+    "SILENCE_ATTACK": {
+        "category": "SILENCE",
+        "value": 1,
+        "target": TARGET_OPPONENT,
+        "handler_key": "disable_atk",
+        "desc": "使对方卡牌攻击失效（仅攻击归零）",
+        # 拥有此技能的卡：56-冰冻生菜
     },
 }
 

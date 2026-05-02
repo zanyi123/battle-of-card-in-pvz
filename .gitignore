@@ -33,3 +33,13 @@ _extract_*.py
 # 系统文件
 .DS_Store
 Thumbs.db
+# 用户数据（运行时生成）
+player_profile.json
+save_data.json
+settings.json
+.game_version
+_tmp_hand.json
+test_*.txt
+test_*.py
+backup/
+

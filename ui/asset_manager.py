@@ -225,7 +225,13 @@ class AssetManager:
         """
         # 1. 通过 image_file 精确加载
         if image_file:
-            card_img_path = self.asset_root / "cards" / image_file
+            # 支持两种路径格式：
+            #   "images/plants/FA_04.png" -> assets/images/plants/FA_04.png
+            #   "fu_55_caiwen.png"       -> assets/cards/fu_55_caiwen.png
+            if "/" in image_file:
+                card_img_path = self.asset_root / image_file
+            else:
+                card_img_path = self.asset_root / "cards" / image_file
             if card_img_path.exists():
                 return pygame.image.load(str(card_img_path)).convert_alpha()
 

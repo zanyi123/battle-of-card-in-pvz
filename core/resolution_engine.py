@@ -23,24 +23,26 @@ class ResolutionEngine:
 
     # 阶段1效果ID（护盾 & 恢复）
     _PHASE_1_EFFECTS = frozenset({
-        'SHIELD_1', 'SHIELD_2', 'SHIELD_6',
-        'HEAL_2', 'HEAL_3', 'HEAL_4', 'HEAL_TO_8', 'HEAL_BY_COST'
+        'SHIELD_1', 'SHIELD_2', 'SHIELD_4', 'SHIELD_6',
+        'HEAL_1', 'HEAL_2', 'HEAL_3', 'HEAL_4', 'HEAL_TO_8', 'HEAL_BY_COST'
     })
     
     # 阶段2效果ID（减伤 & 破甲 & 精力 & 连携）
     _PHASE_2_EFFECTS = frozenset({
-        'MANA_1', 'MANA_3', 'MANA_4',
-        'DMG_REDUCE_2', 'DMG_REDUCE_PER_CARD',
+        'MANA_1', 'MANA_2', 'MANA_3', 'MANA_4',
+        'DMG_REDUCE_2', 'REDUCE_DMG_2', 'DMG_REDUCE_PER_CARD',
         'ARMOR_PEN', 'ARMOR_PIERCE',
-        'COMBO_HEAL_DMG', 'BOOST_ATK_HEAL'
+        'COMBO_HEAL_DMG', 'BOOST_ATK_HEAL', 'DMG_BUFF_ADD_3',
+        'WEAKEN_ALL'
     })
     
     # 阶段3效果ID（阵营克制）
     _PHASE_3_EFFECTS = frozenset({
-        'COUNTER_ATK_ZERO',      # 飞镖洋蓟：坦克攻击时atk清0
+        'COUNTER_ATK_ZERO',      # 飞镖洋蓟：被法师攻击时atk清0
         'COUNTER_DMG_X3',        # 西瓜投手：攻击坦克时伤害×3
         'DMG_BUFF_2X',           # 毁灭菇：攻击非坦克时伤害×2
-        'NO_COUNTER_DMG_X2'      # 毁灭菇（旧ID兼容）：攻击非坦克时伤害×2
+        'NO_COUNTER_DMG_X2',     # 毁灭菇（旧ID兼容）
+        'DMG_BUFF_2X_COUNTER'    # 橡木弓手：克制阵营伤害×2
     })
     
     # 阶段4效果ID（增伤）
@@ -55,7 +57,10 @@ class ResolutionEngine:
         'STEAL_CARD', 'STEAL_SH',
         'CONVERT_COST_TO_HEAL', 'COST_TO_HEAL',
         'CONVERT_ATK_TO_HEAL', 'ATK_TO_HEAL',
-        'COST_TO_HEAL_SELF'
+        'COST_TO_HEAL_SELF',
+        'BLOCK_NEXT_DRAW',
+        'MULTIPLY_DMG_BY_OPPONENT_COUNT',
+        'ABSORB_SHIELD'
     })
     
     # 阶段6效果ID（控制 & 防御）
@@ -352,6 +357,9 @@ class ResolutionEngine:
         - CONVERT_COST_TO_HEAL/COST_TO_HEAL: 费用转回血
         - CONVERT_ATK_TO_HEAL/ATK_TO_HEAL: 对手攻击转回血
         - COST_TO_HEAL_SELF: 自身费用转回血
+        - WEAKEN_ALL: 弱化对手所有卡牌
+        - BLOCK_NEXT_DRAW: 困窘（对手下回合无法补牌）
+        - MULTIPLY_DMG_BY_OPPONENT_COUNT: 伤害 × 对手出牌数量
         """
         logs.append({
             "player": player_key,
@@ -371,6 +379,7 @@ class ResolutionEngine:
                     state, player_key, opponent_key, card, effect_id, logs
                 )
                 logs.extend(effect_logs)
+
     
     def _apply_phase_6(
         self,
@@ -388,6 +397,7 @@ class ResolutionEngine:
         - SILENCE_TURN/SILENCE: 沉默回合（无法出牌）
         - REFLECT_DMG/REFLECT_ATK: 反弹伤害
         - COUNTER: 克制标签
+        - ARMOR_PEN: 破甲，攻击无视护盾
         """
         logs.append({
             "player": player_key,
@@ -407,6 +417,7 @@ class ResolutionEngine:
                     state, player_key, opponent_key, card, effect_id, logs
                 )
                 logs.extend(effect_logs)
+
     
     def _finalize_damage(
         self,
@@ -482,6 +493,7 @@ class ResolutionEngine:
         "COUNTER_ATK_ZERO",      # 飞镖洋蓟：对克制自己阵营的对手攻击清0
         "COUNTER_DMG_X3",        # 西瓜投手：对克制阵营伤害×3
         "NO_COUNTER_DMG_X2",     # 毁灭菇：若无法被克制，伤害×2
+        "DMG_BUFF_2X_COUNTER",   # 橡木弓手：对克制阵营伤害×2
     })
     # 莲小蓬等辅助增伤效果（空 effect_id 兜底卡牌 ID）
     _SUPPORT_BUFF_CARD_IDS: frozenset[int] = frozenset({30})  # 莲小蓬
@@ -546,6 +558,7 @@ class ResolutionEngine:
           {player}_armor_pierce      → 该方攻击无视对手护盾（在 _apply_damage 中处理）
           {player}_countering        → 该方是否正在克制对手
           {player}_countering_faction → 该方克制的对手阵营
+          {player}_weakened          → 对手是否被弱化（WEAKEN_ALL）
 
         返回 (p1_damage_to_take, p2_damage_to_take)：
           p1_damage_to_take = P2 打给 P1 的伤害
@@ -584,10 +597,16 @@ class ResolutionEngine:
         p2_damage = 0
         if p1_main is not None and not (temp.get("P1_atk_disabled") or temp.get("P1_main_atk_zero")):
             p1_atk = int(self._card_value(p1_main, "atk", 0)) + int(temp.get("P1_atk_boost", 0))
+            # WEAKEN_ALL：如果P1被弱化，atk强制降为1
+            if temp.get("P1_weakened"):
+                p1_atk = min(p1_atk, 1)
             p1_atk = max(0, p1_atk)
             p1_mult = float(temp.get("P1_dmg_multiplier", 1.0))
             p1_base = int(p1_atk * p1_mult)
             p2_atk_raw = int(self._card_value(p2_main, "atk", 0)) if p2_main else 0
+            # WEAKEN_ALL：克制溢出计算中也使用弱化后的atk
+            if temp.get("P2_weakened"):
+                p2_atk_raw = min(p2_atk_raw, 1)
 
             if p1_counters_p2:
                 # P1克制P2：溢出伤害 = P1_base - P2_raw
@@ -608,10 +627,16 @@ class ResolutionEngine:
         p1_damage = 0
         if p2_main is not None and not (temp.get("P2_atk_disabled") or temp.get("P2_main_atk_zero")):
             p2_atk = int(self._card_value(p2_main, "atk", 0)) + int(temp.get("P2_atk_boost", 0))
+            # WEAKEN_ALL：如果P2被弱化，atk强制降为1
+            if temp.get("P2_weakened"):
+                p2_atk = min(p2_atk, 1)
             p2_atk = max(0, p2_atk)
             p2_mult = float(temp.get("P2_dmg_multiplier", 1.0))
             p2_base = int(p2_atk * p2_mult)
             p1_atk_raw = int(self._card_value(p1_main, "atk", 0)) if p1_main else 0
+            # WEAKEN_ALL：克制溢出计算中也使用弱化后的atk
+            if temp.get("P1_weakened"):
+                p1_atk_raw = min(p1_atk_raw, 1)
 
             if p2_counters_p1:
                 # P2克制P1：溢出伤害 = P2_base - P1_raw

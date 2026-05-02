@@ -243,6 +243,18 @@ def build_initial_state(state_machine: GameStateMachine) -> dict[str, Any]:
 
     log_event(f"[Init] CATEGORY_MAP: {category_map}")
 
+    # 从 76 张卡牌中随机抽取 54 张组成正常对局牌库
+    all_cards = _load_full_deck()
+    normal_deck_size = 54  # 正常对局卡牌数量
+
+    if len(all_cards) > normal_deck_size:
+        random.shuffle(all_cards)
+        full_deck = all_cards[:normal_deck_size]
+        log_event(f"[Init] 从 {len(all_cards)} 张卡牌中抽取了 {normal_deck_size} 张卡牌")
+    else:
+        full_deck = all_cards
+        log_event(f"[Init] 只有 {len(full_deck)} 张卡牌，全部使用")
+
     # shuffle → P1:5 + P2:5 + 牌堆:44
     random.shuffle(full_deck)
     p1_hand = full_deck[:5]

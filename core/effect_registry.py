@@ -49,6 +49,24 @@ EFFECT_CATEGORIES: dict[str, dict[str, str]] = {
         "icon_code": "block",
         "desc": "抵挡一回合的所有攻击（完全免疫一次伤害）",
     },
+    "ABSORB": {
+        "name": "吸收",
+        "type": "penetration",
+        "icon_code": "absorb",
+        "desc": "吸收对手护盾值并移除",
+    },
+    "WEAKEN": {
+        "name": "削弱",
+        "type": "penetration",
+        "icon_code": "weaken",
+        "desc": "将对手所有卡牌攻击力强制降至1",
+    },
+    "MULTIPLY": {
+        "name": "增生",
+        "type": "penetration",
+        "icon_code": "multiply",
+        "desc": "伤害 × 对手出牌数量",
+    },
     "REFLECT": {
         "name": "反弹",
         "type": "defense",
@@ -116,6 +134,14 @@ EFFECT_CATEGORIES: dict[str, dict[str, str]] = {
         "type": "combo",
         "icon_code": "combo",
         "desc": "与同回合其他牌联动触发增益或伤害加成",
+    },
+
+    # ── 辅助增伤类 ──────────────────────────────────────────────
+    "SUPPORT_DMG": {
+        "name": "辅助增伤",
+        "type": "buff",
+        "icon_code": "support_dmg",
+        "desc": "有辅助卡同出时，伤害倍增",
     },
 }
 

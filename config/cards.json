@@ -1,7 +1,7 @@
 {
   "_comment": "由 excel_to_json.py 从 Excel 源数据自动生成，请勿手动编辑",
   "meta": {
-    "total_cards": 54,
+    "total_cards": 76,
     "source": "pvzcard-infor.xlsx",
     "factions": {
       "法": "fa",
@@ -33,7 +33,7 @@
       "limit_flag": false,
       "effect_id": "MANA_1",
       "description": "能量充盈：精力上限增益+1",
-      "image_file": "fu_01_xiangri.png"
+      "image_file": "images/plants/FU_01_XIANGRI.png"
     },
     {
       "id": 2,
@@ -45,7 +45,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "基础攻击卡牌",
-      "image_file": "sh_02_wandou.png"
+      "image_file": "images/plants/SH_02_WANDOU.png"
     },
     {
       "id": 3,
@@ -57,7 +57,7 @@
       "limit_flag": false,
       "effect_id": "SHIELD_1",
       "description": "盾：护盾+1",
-      "image_file": "tk_03_jianguo.png"
+      "image_file": "images/plants/TK_03_JIANGUO.png"
     },
     {
       "id": 4,
@@ -69,7 +69,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "高爆发伤害",
-      "image_file": "fa_04_huobao.png"
+      "image_file": "images/plants/FA_04_HUOBAO.png"
     },
     {
       "id": 5,
@@ -81,7 +81,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "基础攻击卡牌",
-      "image_file": "sh_05_meixiao.png"
+      "image_file": "images/plants/SH_05_MEIXIAO.png"
     },
     {
       "id": 6,
@@ -93,7 +93,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "中距离攻击",
-      "image_file": "sh_06_yumi.png"
+      "image_file": "images/plants/SH_06_YUMI.png"
     },
     {
       "id": 7,
@@ -105,7 +105,7 @@
       "limit_flag": true,
       "effect_id": "SHIELD_TURN",
       "description": "抵挡一回合攻击",
-      "image_file": "tk_07_yuanshihou.png"
+      "image_file": "images/plants/TK_07_YUANSHIHOU.png"
     },
     {
       "id": 8,
@@ -117,7 +117,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "零费高伤爆发",
-      "image_file": "fu_08_baolie.png"
+      "image_file": "images/plants/FU_08_BAOLIE.png"
     },
     {
       "id": 9,
@@ -129,7 +129,7 @@
       "limit_flag": false,
       "effect_id": "REDUCE_DMG_2",
       "description": "减伤：降低受到伤害2点",
-      "image_file": "sh_09_hanbing.png"
+      "image_file": "images/plants/SH_09_HANBING.png"
     },
     {
       "id": 10,
@@ -141,7 +141,7 @@
       "limit_flag": false,
       "effect_id": "MANA_3",
       "description": "能量充盈：精力上限增益+3",
-      "image_file": "fu_10_yangguang.png"
+      "image_file": "images/plants/FU_10_YANGGUANG.png"
     },
     {
       "id": 11,
@@ -153,7 +153,7 @@
       "limit_flag": true,
       "effect_id": "ARMOR_PIERCE",
       "description": "破甲：无视护盾",
-      "image_file": "sh_11_youmu.png"
+      "image_file": "images/plants/SH_11_YOUMU.png"
     },
     {
       "id": 12,
@@ -165,7 +165,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "高攻高防坦克",
-      "image_file": "tk_12_yuanshijian.png"
+      "image_file": "images/plants/TK_12_YUANSHIJIAN.png"
     },
     {
       "id": 13,
@@ -177,7 +177,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "强力压制",
-      "image_file": "tk_13_wogua.png"
+      "image_file": "images/plants/TK_13_WOGUA.png"
     },
     {
       "id": 14,
@@ -189,7 +189,7 @@
       "limit_flag": true,
       "effect_id": "DISCARD_FA",
       "description": "将对手手牌中的法师阵营卡随机抽出作废",
-      "image_file": "tk_14_chire.png"
+      "image_file": "images/plants/TK_14_CHIRE.png"
     },
     {
       "id": 15,
@@ -201,7 +201,7 @@
       "limit_flag": true,
       "effect_id": "SHIELD_6",
       "description": "护盾+6",
-      "image_file": "fu_15_badou.png"
+      "image_file": "images/plants/FU_15_BADOU.png"
     },
     {
       "id": 16,
@@ -213,7 +213,7 @@
       "limit_flag": true,
       "effect_id": "HEAL_8",
       "description": "将血量恢复至8点",
-      "image_file": "fu_16_xiantao.png"
+      "image_file": "images/plants/FU_16_XIANTAO.png"
     },
     {
       "id": 17,
@@ -225,7 +225,7 @@
       "limit_flag": false,
       "effect_id": "ATK_DISABLE",
       "description": "使对方卡牌攻击失效（仅攻击）",
-      "image_file": "fu_17_mainxiao.png"
+      "image_file": "images/plants/FU_17_MAINXIAO.png"
     },
     {
       "id": 18,
@@ -237,7 +237,7 @@
       "limit_flag": false,
       "effect_id": "HEAL_2",
       "description": "恢复：回血+2",
-      "image_file": "tk_18_bailuo.png"
+      "image_file": "images/plants/TK_18_BAILUO.png"
     },
     {
       "id": 19,
@@ -249,7 +249,7 @@
       "limit_flag": true,
       "effect_id": "SILENCE",
       "description": "沉默：该回合对手无法出牌",
-      "image_file": "fa_19_binglong.png"
+      "image_file": "images/plants/FA_19_BINGLONG.png"
     },
     {
       "id": 20,
@@ -261,7 +261,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "魔法攻击",
-      "image_file": "fa_20_moshu.png"
+      "image_file": "images/plants/FA_20_MOSHU.png"
     },
     {
       "id": 21,
@@ -273,7 +273,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "低费高攻",
-      "image_file": "sh_21_yezi.png"
+      "image_file": "images/plants/SH_21_YEZI.png"
     },
     {
       "id": 22,
@@ -285,7 +285,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "基础辅助卡",
-      "image_file": "fu_22_zhusun.png"
+      "image_file": "images/plants/FU_22_ZHUSUN.png"
     },
     {
       "id": 23,
@@ -297,7 +297,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "火焰攻击",
-      "image_file": "fa_23_huolongc.png"
+      "image_file": "images/plants/FA_23_HUOLONGC.png"
     },
     {
       "id": 24,
@@ -309,7 +309,7 @@
       "limit_flag": true,
       "effect_id": "ARMOR_PIERCE",
       "description": "破甲：无视护盾",
-      "image_file": "fa_23_huolongg.png"
+      "image_file": "images/plants/FA_23_HUOLONGG.png"
     },
     {
       "id": 25,
@@ -321,7 +321,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "闪电攻击",
-      "image_file": "fa_25_shandian.png"
+      "image_file": "images/plants/FA_25_SHANDIAN.png"
     },
     {
       "id": 26,
@@ -333,7 +333,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "强力辅助",
-      "image_file": "fu_26_longshe.png"
+      "image_file": "images/plants/FU_26_LONGSHE.png"
     },
     {
       "id": 27,
@@ -345,7 +345,7 @@
       "limit_flag": false,
       "effect_id": "MANA_3",
       "description": "能量充盈：精力上限增益+3",
-      "image_file": "fu_27_yangguangg.png"
+      "image_file": "images/plants/FU_27_YANGGUANGG.png"
     },
     {
       "id": 28,
@@ -357,7 +357,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "穿刺攻击",
-      "image_file": "sh_28_xianren.png"
+      "image_file": "images/plants/SH_28_XIANREN.png"
     },
     {
       "id": 29,
@@ -369,7 +369,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "精准射击",
-      "image_file": "sh_29_hongzhen.png"
+      "image_file": "images/plants/SH_29_HONGZHEN.png"
     },
     {
       "id": 30,
@@ -381,7 +381,7 @@
       "limit_flag": false,
       "effect_id": "SUPPORT_DMG_MULTIPLIER",
       "description": "增伤：有辅助时，伤害x3",
-      "image_file": "sh_30_lainxiao.png"
+      "image_file": "images/plants/SH_30_LAINXIAO.png"
     },
     {
       "id": 31,
@@ -393,7 +393,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "零费攻击",
-      "image_file": "sh_31_xiaopen.png"
+      "image_file": "images/plants/SH_31_XIAOPEN.png"
     },
     {
       "id": 32,
@@ -405,7 +405,7 @@
       "limit_flag": true,
       "effect_id": "COUNTER_ATK_ZERO",
       "description": "对克制它阵营卡牌的攻击值清0",
-      "image_file": "sh_32_feibiao.png"
+      "image_file": "images/plants/SH_32_FEIBIAO.png"
     },
     {
       "id": 33,
@@ -417,7 +417,7 @@
       "limit_flag": true,
       "effect_id": "COUNTER_DMG_X3",
       "description": "对克制的阵营伤害x3",
-      "image_file": "sh_33_xigua.png"
+      "image_file": "images/plants/SH_33_XIGUA.png"
     },
     {
       "id": 34,
@@ -429,7 +429,7 @@
       "limit_flag": true,
       "effect_id": "NO_COUNTER_DMG_X2",
       "description": "若无法被克制，伤害x2",
-      "image_file": "fa_34_huimie.png"
+      "image_file": "images/plants/FA_34_HUIMIE.png"
     },
     {
       "id": 35,
@@ -441,7 +441,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "毒性攻击",
-      "image_file": "fa_35_duying.png"
+      "image_file": "images/plants/FA_35_DUYING.png"
     },
     {
       "id": 36,
@@ -453,7 +453,7 @@
       "limit_flag": true,
       "effect_id": "HEAL_4",
       "description": "恢复：回血+4",
-      "image_file": "tk_36_xuanzhuan.png"
+      "image_file": "images/plants/TK_36_XUANZHUAN.png"
     },
     {
       "id": 37,
@@ -465,7 +465,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "防御型坦克",
-      "image_file": "tk_37_liulain.png"
+      "image_file": "images/plants/TK_37_LIULAIN.png"
     },
     {
       "id": 38,
@@ -477,7 +477,7 @@
       "limit_flag": true,
       "effect_id": "STEAL_CARD",
       "description": "从对面手牌抽一张加入自己手牌",
-      "image_file": "fu_38_xiangshui.png"
+      "image_file": "images/plants/FU_38_XIANGSHUI.png"
     },
     {
       "id": 39,
@@ -489,7 +489,7 @@
       "limit_flag": false,
       "effect_id": "COST_TO_HEAL",
       "description": "将同出的卡牌消耗费用值转为回复血量",
-      "image_file": "fu_39_fensi.png"
+      "image_file": "images/plants/FU_39_FENSI.png"
     },
     {
       "id": 40,
@@ -501,7 +501,7 @@
       "limit_flag": true,
       "effect_id": "REFLECT_ATK",
       "description": "将对方攻击反弹对方",
-      "image_file": "fu_40_meihuo.png"
+      "image_file": "images/plants/FU_40_MEIHUO.png"
     },
     {
       "id": 41,
@@ -513,7 +513,7 @@
       "limit_flag": false,
       "effect_id": "BOOST_ATK_HEAL",
       "description": "增加同出卡牌伤害2点，恢复2点生命",
-      "image_file": "fu_41_nengliang.png"
+      "image_file": "images/plants/FU_41_NENGLIANG.png"
     },
     {
       "id": 42,
@@ -525,7 +525,7 @@
       "limit_flag": true,
       "effect_id": "MANA_4",
       "description": "能量充盈：精力上限增益+4",
-      "image_file": "fu_42_geshou.png"
+      "image_file": "images/plants/FU_42_GESHOU.png"
     },
     {
       "id": 43,
@@ -537,7 +537,7 @@
       "limit_flag": false,
       "effect_id": "HEAL_3",
       "description": "恢复：回血+3",
-      "image_file": "fu_43_sanye.png"
+      "image_file": "images/plants/FU_43_SANYE.png"
     },
     {
       "id": 44,
@@ -549,7 +549,7 @@
       "limit_flag": true,
       "effect_id": "REDUCE_DMG_2",
       "description": "对对手卡牌每张减伤2点",
-      "image_file": "tk_44_xiongguo.png"
+      "image_file": "images/plants/TK_44_XIONGGUO.png"
     },
     {
       "id": 45,
@@ -561,7 +561,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "防御型卡牌",
-      "image_file": "tk_45_danxiao.png"
+      "image_file": "images/plants/TK_45_DANXIAO.png"
     },
     {
       "id": 46,
@@ -573,7 +573,7 @@
       "limit_flag": true,
       "effect_id": "STEAL_SH",
       "description": "将对手手牌中的射手阵营卡随机抽出添加到自己手牌",
-      "image_file": "tk_46_anying.png"
+      "image_file": "images/plants/TK_46_ANYING.png"
     },
     {
       "id": 47,
@@ -585,7 +585,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "平衡型坦克",
-      "image_file": "tk_47_nangua.png"
+      "image_file": "images/plants/TK_47_NANGUA.png"
     },
     {
       "id": 48,
@@ -597,7 +597,7 @@
       "limit_flag": true,
       "effect_id": "SHIELD_2",
       "description": "盾：护盾+2",
-      "image_file": "tk_48_quanxi.png"
+      "image_file": "images/plants/TK_48_QUANXI.png"
     },
     {
       "id": 49,
@@ -609,7 +609,7 @@
       "limit_flag": true,
       "effect_id": "COST_TO_HEAL_SELF",
       "description": "恢复：自己消耗费用等于生命恢复值",
-      "image_file": "fa_49_nangwu.png"
+      "image_file": "images/plants/FA_49_NANGWU.png"
     },
     {
       "id": 50,
@@ -621,7 +621,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "酸性腐蚀攻击",
-      "image_file": "fa_50_qiangsuan.png"
+      "image_file": "images/plants/FA_50_QIANGSUAN.png"
     },
     {
       "id": 51,
@@ -633,7 +633,7 @@
       "limit_flag": true,
       "effect_id": "SHIELD_TURN",
       "description": "抵挡一回合攻击",
-      "image_file": "fa_51_rela.png"
+      "image_file": "images/plants/FA_51_RELA.png"
     },
     {
       "id": 52,
@@ -645,7 +645,7 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "岩浆爆发攻击",
-      "image_file": "fa_52_yanjiang.png"
+      "image_file": "images/plants/FA_52_YANJIANG.png"
     },
     {
       "id": 53,
@@ -657,7 +657,7 @@
       "limit_flag": true,
       "effect_id": "ATK_TO_HEAL",
       "description": "将对方手牌攻击值转化为恢复血量",
-      "image_file": "fa_53_shuijing.png"
+      "image_file": "images/plants/FA_53_SHUIJING.png"
     },
     {
       "id": 54,
@@ -669,7 +669,271 @@
       "limit_flag": false,
       "effect_id": "",
       "description": "攻击释放两枚豌豆",
-      "image_file": "sh_54_shuangfa.png"
+      "image_file": "images/plants/SH_54_SHUANGFA.png"
+    },
+    {
+      "id": 55,
+      "name": "菜问fu",
+      "cost": 3,
+      "atk": 3,
+      "faction": "辅",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "",
+      "description": "基础辅助卡",
+      "image_file": "images/plants/FU_55_CAIWEN.png"
+    },
+    {
+      "id": 56,
+      "name": "冰冻生菜fu",
+      "cost": 2,
+      "atk": 0,
+      "faction": "辅",
+      "type": "主",
+      "limit_flag": true,
+      "effect_id": "SILENCE_ATTACK",
+      "description": "使对方卡牌攻击失效（仅攻击）",
+      "image_file": "images/plants/FU_56_BINGDONG.png"
+    },
+    {
+      "id": 57,
+      "name": "樱桃炸弹fu",
+      "cost": 2,
+      "atk": 3,
+      "faction": "辅",
+      "type": "主",
+      "limit_flag": true,
+      "effect_id": "",
+      "description": "高爆发伤害",
+      "image_file": "images/plants/FU_57_YINGTAO.png"
+    },
+    {
+      "id": 58,
+      "name": "高坚果t",
+      "cost": 3,
+      "atk": 1,
+      "faction": "坦",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "SHIELD_4",
+      "description": "盾：护盾+4",
+      "image_file": "images/plants/TK_58_GAOJIAN.png"
+    },
+    {
+      "id": 59,
+      "name": "钢地刺t",
+      "cost": 5,
+      "atk": 2,
+      "faction": "坦",
+      "type": "主",
+      "limit_flag": true,
+      "effect_id": "WEAKEN_ALL",
+      "description": "弱化：对手所有卡牌攻击力降至1",
+      "image_file": "images/plants/TJ_59_GANGDI.png"
+    },
+    {
+      "id": 60,
+      "name": "激光豆s",
+      "cost": 2,
+      "atk": 2,
+      "faction": "射",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "",
+      "description": "中距离激光攻击",
+      "image_file": "images/plants/SH_60_JIGUANG.png"
+    },
+    {
+      "id": 61,
+      "name": "棱镜草s",
+      "cost": 2,
+      "atk": 3,
+      "faction": "射",
+      "type": "主",
+      "limit_flag": true,
+      "effect_id": "HEAL_1",
+      "description": "恢复1点生命值",
+      "image_file": "images/plants/SH_61_LENGJING.png"
+    },
+    {
+      "id": 62,
+      "name": "充能柚子fa",
+      "cost": 4,
+      "atk": 4,
+      "faction": "法",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "",
+      "description": "充能爆发攻击",
+      "image_file": "images/plants/FA_62_CHONGNENG.png"
+    },
+    {
+      "id": 63,
+      "name": "星星果fu",
+      "cost": 1,
+      "atk": 1,
+      "faction": "辅",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "",
+      "description": "星星光效辅助",
+      "image_file": "images/plants/FU_63_XINGXING.png"
+    },
+    {
+      "id": 64,
+      "name": "瓷砖萝卜fu",
+      "cost": 2,
+      "atk": 0,
+      "faction": "辅",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "DMG_BUFF_ADD_3",
+      "description": "增加同出卡牌伤害3点",
+      "image_file": "images/plants/FU_64_CIZHUAN.png"
+    },
+    {
+      "id": 65,
+      "name": "火葫芦fa",
+      "cost": 2,
+      "atk": 3,
+      "faction": "法",
+      "type": "主",
+      "limit_flag": true,
+      "effect_id": "ARMOR_PEN",
+      "description": "破甲：攻击无视护盾",
+      "image_file": "images/plants/FA_65_HUOHU.png"
+    },
+    {
+      "id": 66,
+      "name": "磁力菇fa",
+      "cost": 3,
+      "atk": 0,
+      "faction": "法",
+      "type": "主",
+      "limit_flag": true,
+      "effect_id": "ABSORB_SHIELD",
+      "description": "吸收护盾：移除对手全部护盾",
+      "image_file": "images/plants/FA_66_CILI.png"
+    },
+    {
+      "id": 67,
+      "name": "花生射手s",
+      "cost": 3,
+      "atk": 1,
+      "faction": "射",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "HEAL_2",
+      "description": "恢复2点生命值",
+      "image_file": "images/plants/SH_67_HUASHENG.png"
+    },
+    {
+      "id": 68,
+      "name": "橡木弓手s",
+      "cost": 2,
+      "atk": 2,
+      "faction": "射",
+      "type": "主",
+      "limit_flag": true,
+      "effect_id": "DMG_BUFF_2X_COUNTER",
+      "description": "对克制阵营伤害×2",
+      "image_file": "images/plants/SH_68_XIANGMU.png"
+    },
+    {
+      "id": 69,
+      "name": "缠绕水草fu",
+      "cost": 3,
+      "atk": 1,
+      "faction": "辅",
+      "type": "主",
+      "limit_flag": true,
+      "effect_id": "BLOCK_NEXT_DRAW",
+      "description": "困窘：对手下回合无法补牌",
+      "image_file": "images/plants/FU_69_CHANRAO.png"
+    },
+    {
+      "id": 70,
+      "name": "鳄梨t",
+      "cost": 3,
+      "atk": 2,
+      "faction": "坦",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "",
+      "description": "坚韧坦克",
+      "image_file": "images/plants/TK_70_ELI.png"
+    },
+    {
+      "id": 71,
+      "name": "保龄泡泡s",
+      "cost": 2,
+      "atk": 2,
+      "faction": "射",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "MULTIPLY_DMG_BY_OPPONENT_COUNT",
+      "description": "伤害 × 对手出牌数量",
+      "image_file": "images/plants/SH_71_BAOLING.png"
+    },
+    {
+      "id": 72,
+      "name": "辣椒投手s",
+      "cost": 1,
+      "atk": 2,
+      "faction": "射",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "",
+      "description": "火焰投掷攻击",
+      "image_file": "images/plants/SH_72_LAJIAO.png"
+    },
+    {
+      "id": 73,
+      "name": "甜菜护卫t",
+      "cost": 3,
+      "atk": 3,
+      "faction": "坦",
+      "type": "主",
+      "limit_flag": true,
+      "effect_id": "HEAL_2",
+      "description": "恢复2点生命值",
+      "image_file": "images/plants/TK_73_TIANCAI.png"
+    },
+    {
+      "id": 74,
+      "name": "眩晕洋葱fu",
+      "cost": 1,
+      "atk": 1,
+      "faction": "辅",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "",
+      "description": "眩晕光效辅助",
+      "image_file": "images/plants/FU_74_XUANYUN.png"
+    },
+    {
+      "id": 75,
+      "name": "飓风甘蓝fa",
+      "cost": 3,
+      "atk": 1,
+      "faction": "法",
+      "type": "主",
+      "limit_flag": false,
+      "effect_id": "DMG_REDUCE_2",
+      "description": "减伤：降低受到伤害2点",
+      "image_file": "images/plants/FA_75_JUFENG.png"
+    },
+    {
+      "id": 76,
+      "name": "金蟾菇fu",
+      "cost": 2,
+      "atk": 1,
+      "faction": "辅",
+      "type": "主",
+      "limit_flag": true,
+      "effect_id": "MANA_2",
+      "description": "精力上限+2",
+      "image_file": "images/plants/FU_76_JINGCHAN.png"
     }
   ]
 }
